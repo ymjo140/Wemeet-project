@@ -2,7 +2,7 @@ import requests
 import numpy as np
 import random
 import re
-from typing import List
+from typing import List, Tuple
 from algorithm import POI 
 
 class RealDataProvider:
@@ -15,125 +15,128 @@ class RealDataProvider:
         self.search_api_url = "https://openapi.naver.com/v1/search/local.json"
         self.geocode_api_url = "https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode"
 
-        self.REGION_ADDRESS_MAP = {
-            "약수": ["약수", "신당", "다산", "청구", "장충"],
-            "한남": ["한남", "이태원", "보광", "서빙고"],
-            "이태원": ["이태원", "한남", "경리단", "용산동"],
-            "을지로": ["을지로", "저동", "초동", "충무로", "입정", "방산"],
-            "종로": ["종로", "관철", "인사", "익선", "낙원"],
-            "명동": ["명동", "남산", "회현", "소공", "충무로"],
-            "홍대": ["서교", "동교", "연남", "합정", "상수", "망원"],
-            "강남": ["역삼", "논현", "서초", "도곡", "삼성", "청담"],
-            "성수": ["성수", "뚝섬", "서울숲", "송정"],
-            "안암": ["안암", "제기", "종암", "고려대"],
-            "동대문": ["창신", "숭인", "신당", "을지로6가", "광희"], 
-            "신촌": ["신촌", "창천", "노고산", "대현", "연세"],
-        }
-
-    def _clean_html(self, text: str) -> str:
-        return re.sub("<[^<]+?>", "", text)
-
-    def _get_real_coordinates(self, address: str, fallback_lat: float, fallback_lng: float):
-        """ 주소를 실제 위도/경도로 변환 (Geocoding API 사용) """
-        if not self.map_client_id or not self.map_client_secret:
-            return fallback_lat, fallback_lng
+    def get_coordinates(self, address: str) -> Tuple[float, float]:
+        if not self.map_client_id: return 0.0, 0.0
         headers = { "X-NCP-APIGW-API-KEY-ID": self.map_client_id, "X-NCP-APIGW-API-KEY": self.map_client_secret }
         try:
-            resp = requests.get(self.geocode_api_url, headers=headers, params={"query": address}, timeout=2)
+            resp = requests.get(self.geocode_api_url, headers=headers, params={"query": address})
             if resp.status_code == 200:
                 data = resp.json()
-                if data.get('addresses'):
-                    return float(data['addresses'][0]['y']), float(data['addresses'][0]['x'])
+                if data.get("addresses"): return float(data["addresses"][0]["y"]), float(data["addresses"][0]["x"])
         except: pass
-        return fallback_lat + random.uniform(-0.002, 0.002), fallback_lng + random.uniform(-0.002, 0.002)
+        return 0.0, 0.0
 
-    def _analyze_attributes(self, title: str, category: str):
-        category = category.replace(">", "")
-        full_text = (title + " " + category).lower()
+    def _clean_html(self, text):
+        return re.sub('<[^<]+?>', '', text)
+
+    def _get_real_coordinates(self, address, center_lat, center_lng):
+        lat, lng = self.get_coordinates(address)
+        if lat != 0.0: return lat, lng
+        return center_lat + random.uniform(-0.002, 0.002), center_lng + random.uniform(-0.002, 0.002)
+
+    # 🌟 [핵심 수정] 카테고리 분류 로직 (문화/액티비티 추가)
+    def _analyze_attributes(self, title, category):
         tags = []
-        internal_category = "restaurant"
-        price_level = 3
-
-        # 1. 공간 유형
-        if any(k in full_text for k in ["회의", "미팅", "스터디룸", "공유오피스", "워크", "대관", "사무실"]):
-            internal_category = "workspace"; tags.append("회의실")
-        elif "카페" in full_text:
-            internal_category = "cafe"; tags.append("카페")
-        elif any(k in full_text for k in ["공원", "산책", "미술관", "전시", "축제"]):
-            internal_category = "place"; tags.append("산책")
+        price = 2
+        cat_key = "junk" 
         
-        # 2. 식당 종류
-        elif any(k in full_text for k in ["오마카세", "코스", "파인다이닝", "호텔", "한정식", "고급"]):
-            internal_category = "fine_dining"; tags.append("고급진"); price_level = 5
-        elif any(k in full_text for k in ["이자카야", "술집", "포차", "맥주", "와인", "바(bar)", "호프"]):
-            internal_category = "izakaya"; tags.append("술집"); price_level = 4
+        title_clean = title.replace(" ", "")
+        category_clean = category.replace(">", " ").strip()
         
-        # 3. 상세 태그
-        if "한정식" in full_text or "백반" in full_text: tags.append("한식")
-        if "파스타" in full_text or "스테이크" in full_text: tags.append("양식")
-        if "룸" in full_text or "프라이빗" in full_text: tags.append("룸이있는")
-        if "가성비" in full_text or "저렴" in full_text: tags.append("가성비좋은"); price_level = 1
-        if "조용한" in full_text or "정숙" in full_text: tags.append("조용한")
-        if "노포" in full_text or "오래된" in full_text: tags.append("노포감성")
-        if "뷰" in full_text or "야경" in full_text: tags.append("뷰가좋은")
-        if "인스타" in full_text or "감성" in full_text: tags.append("인스타감성")
+        # 🎭 1. 문화생활 (Culture)
+        culture_keywords = ["영화관", "극장", "미술관", "박물관", "전시", "공연", "아트", "갤러리", "CGV", "롯데시네마", "메가박스", "문화"]
+        if any(kw in category_clean or kw in title_clean for kw in culture_keywords):
+            cat_key = "culture"
+            tags.append("문화생활")
+            tags.append("데이트")
+            if "영화" in category_clean or "시네마" in title_clean: tags.append("영화관")
+            if "미술" in category_clean or "갤러리" in title_clean: tags.append("전시회")
+            price = 3
+
+        # 🎳 2. 액티비티/놀거리 (Activity)
+        elif any(kw in category_clean or kw in title_clean for kw in ["방탈출", "보드게임", "볼링", "당구", "오락실", "VR", "노래방", "만화카페", "공방", "클래스", "체험", "공원", "산책"]):
+            cat_key = "activity"
+            tags.append("액티비티")
+            tags.append("놀거리")
+            if "방탈출" in title_clean: tags.append("방탈출")
+            if "보드게임" in category_clean: tags.append("보드게임")
+            if "공원" in category_clean: tags.append("산책")
+            price = 2
+
+        # 🏢 3. 워크스페이스
+        elif any(kw in category_clean or kw in title_clean for kw in ["공간대여", "스터디", "오피스", "회의", "세미나", "사무실", "비즈니스", "파티룸", "스튜디오"]):
+            cat_key = "workspace"
+            tags.append("조용한")
+            tags.append("회의실")
+            price = 3
+
+        # ☕ 4. 카페
+        elif any(kw in category_clean for kw in ["카페", "커피", "디저트", "베이커리", "찻집"]):
+            cat_key = "cafe"
+            tags.append("카페")
+            if "디저트" in category_clean: tags.append("디저트")
+            price = 2
+
+        # 🍺 5. 술집
+        elif any(kw in category_clean for kw in ["술집", "주점", "이자카야", "포차", "바", "호프", "맥주", "와인", "Pub"]):
+            cat_key = "pub"
+            tags.append("술")
+            tags.append("시끌벅적")
+            price = 3
+
+        # 🍽️ 6. 식당
+        elif any(kw in category_clean for kw in ["음식점", "식당", "한식", "양식", "일식", "중식", "분식", "뷔페", "레스토랑", "고기"]):
+            cat_key = "restaurant"
+            tags.append("맛집")
+            if "고기" in category_clean: tags.append("고기")
+            price = 3
         
-        # 4. 정크 필터
-        else:
-            if any(k in full_text for k in ["국밥", "분식", "우동"]): price_level = 1
-            if any(k in full_text for k in ["병원", "의원", "약국", "클리닉", "법무", "세무", "주차장", "ATM"]):
-                 internal_category = "junk"
+        return cat_key, list(set(tags)), price
 
-        return internal_category, list(set(tags)), price_level
-
-    def search_places_all_queries(self, queries: List[str], location: str, center_lat: float, center_lng: float) -> List[POI]:
-        if not self.search_client_id: return []
-
-        headers = {
-            "X-Naver-Client-Id": self.search_client_id,
-            "X-Naver-Client-Secret": self.search_client_secret,
-        }
-
+    def search_places_all_queries(self, queries: List[str], region_name: str, center_lat: float, center_lng: float, allowed_types: List[str] = None) -> List[POI]:
         all_pois = []
         seen_titles = set()
-        search_region_key = location.split()[0].replace("역", "")
-        valid_address_keywords = self.REGION_ADDRESS_MAP.get(search_region_key, [search_region_key])
 
-        for query in queries[:20]:
-            params = {"query": query, "display": 20, "sort": "comment"} 
+        for query in queries[:15]: # 15개까지 검색
             try:
-                response = requests.get(self.search_api_url, headers=headers, params=params, timeout=3)
-                items = response.json().get('items', [])
+                final_query = f"{region_name.split('(')[0]} {query}"
+                headers = { "X-Naver-Client-Id": self.search_client_id, "X-Naver-Client-Secret": self.search_client_secret }
+                resp = requests.get(self.search_api_url, headers=headers, params={"query": final_query, "display": 10, "sort": "random"}, timeout=2)
+                
+                if resp.status_code != 200: continue
+                
+                items = resp.json().get('items', [])
                 
                 for item in items:
                     title = self._clean_html(item.get("title", ""))
+                    cat_str = item.get("category", "")
                     
-                    address_text = (item.get('roadAddress', '') + ' ' + item.get('address', '')).strip()
-                    is_valid_location = False
-                    for addr_kw in valid_address_keywords:
-                        if addr_kw in address_text:
-                            is_valid_location = True
-                            break
-                    if not is_valid_location: continue
-
                     if not title or title in seen_titles: continue
                     seen_titles.add(title)
-
-                    cat_key, tags, price = self._analyze_attributes(title, item.get("category", ""))
+                    
+                    cat_key, tags, price = self._analyze_attributes(title, cat_str)
+                    
                     if cat_key == "junk": continue
+                    
+                    # 🌟 [핵심 수정] allowed_types 필터링 (OR 조건)
+                    if allowed_types:
+                         if cat_key in allowed_types: pass
+                         # 예외: 사용자가 '데이트'를 원하는데 'culture'나 'activity'가 나오면 통과
+                         elif "culture" in allowed_types and cat_key in ["culture", "activity", "cafe"]: pass 
+                         else: continue
 
-                    real_lat, real_lng = self._get_real_coordinates(address_text, center_lat, center_lng)
-
-                    poi = POI(
+                    address = item.get('roadAddress', item.get('address', ''))
+                    lat, lng = self._get_real_coordinates(address, center_lat, center_lng)
+                    
+                    all_pois.append(POI(
                         id=random.randint(100000, 999999),
                         name=title,
                         category=cat_key,
                         tags=tags,
                         price_level=price,
-                        location=np.array([real_lat, real_lng]),
-                        avg_rating=round(random.uniform(3.5, 5.0), 1),
-                    )
-                    all_pois.append(poi)
-            except Exception: continue
-
+                        location=np.array([lat, lng]),
+                        avg_rating=round(random.uniform(3.5, 5.0), 1)
+                    ))
+            except: continue
+            
         return all_pois

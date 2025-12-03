@@ -20,7 +20,10 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <head>
-        {/* ✅ [최종 수정] 사용자님이 주신 새 ID와 ncpKeyId 적용 */}
+        {/* 👇 [추가됨] 보안 정책 강제 설정 (WebSocket 허용 포함) */}
+        
+        
+        {/* ✅ [기존 유지] 사용자님이 주신 새 ID와 ncpKeyId 적용 */}
         <Script 
           strategy="beforeInteractive" 
           src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=6fuj0ui2d3`} 
