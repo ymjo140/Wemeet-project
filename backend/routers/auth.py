@@ -9,7 +9,7 @@ import models
 from dependencies import get_db, verify_password, get_password_hash, create_access_token
 from constants import KAKAO_REST_API_KEY
 
-# Vercel 배포 주소와 일치해야 함
+# Vercel 배포 주소 (사용자님 주소)
 KAKAO_REDIRECT_URI = "https://v0-we-meet-app-features.vercel.app/auth/callback/kakao" 
 
 router = APIRouter()
@@ -49,18 +49,24 @@ async def kakao_login(req: KakaoLoginRequest, db: Session = Depends(get_db)):
         user_info = user_info_res.json()
         
         kakao_id = str(user_info.get("id"))
-        properties = user_info.get("properties", {})
+        
+        # 🌟 [수정] 닉네임 추출 로직 강화
         kakao_account = user_info.get("kakao_account", {})
         profile = kakao_account.get("profile", {})
+        properties = user_info.get("properties", {})
         
+        # 1순위: 프로필 닉네임, 2순위: 속성 닉네임, 3순위: 기본값
         nickname = profile.get("nickname") or properties.get("nickname") or f"User_{kakao_id[-4:]}"
+        
         email = f"kakao_{kakao_id}@wemeet.com" 
 
         user = db.query(models.User).filter(models.User.email == email).first()
         if not user:
+            # 신규 가입 시 추출한 nickname 사용
             user = models.User(email=email, hashed_password=get_password_hash("kakao"), name=nickname, avatar="👤", preferences={}, wallet_balance=3000)
             db.add(user); db.commit(); db.refresh(user)
             db.add(models.UserAvatar(user_id=user.id, equipped={"body": "body_basic"}, inventory=[])); db.commit()
 
         access_token = create_access_token({"sub": user.email})
+        # 반환 시에도 nickname 사용
         return { "access_token": access_token, "token_type": "bearer", "user_id": user.id, "name": user.name }

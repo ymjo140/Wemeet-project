@@ -15,20 +15,29 @@ import { Slider } from "@/components/ui/slider"
 
 declare global { interface Window { naver: any; } }
 
-const DEMO_FRIENDS = [
-  { 
-      id: 2, name: "클레오", location: "홍대입구", lat: 37.557, lng: 126.924, 
-      avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } 
-  },
-  { 
-      id: 3, name: "벤지", location: "강남역", lat: 37.498, lng: 127.027, 
-      avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } 
-  },
-  { 
-      id: 4, name: "로건", location: "성수동", lat: 37.544, lng: 127.056, 
-      avatar: { equipped: { body: "body_basic", hair: "hair_02", top: "top_tshirt", bottom: "bottom_shorts", pet: "pet_cat", shoes: "shoes_sneakers" } } 
-  },
-]
+// 🌟 [수정] AI 페르소나 4인방 (테스트용)
+const AI_PERSONAS = [
+    { 
+        id: 2, name: "김직장 (강남)", location: "강남역", lat: 37.498, lng: 127.027, 
+        desc: "퇴근 후 한잔을 좋아하는 직장인",
+        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_jeans" } } 
+    },
+    { 
+        id: 3, name: "이대학 (홍대)", location: "홍대입구", lat: 37.557, lng: 126.924, 
+        desc: "가성비와 힙한 곳을 찾는 대학생",
+        avatar: { equipped: { body: "body_basic", hair: "hair_02", top: "top_tshirt", bottom: "bottom_shorts" } } 
+    },
+    { 
+        id: 4, name: "박감성 (성수)", location: "성수역", lat: 37.544, lng: 127.056, 
+        desc: "분위기 좋은 카페/전시 마니아",
+        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans" } } 
+    },
+    { 
+        id: 5, name: "최개발 (판교)", location: "판교역", lat: 37.394, lng: 127.111, 
+        desc: "조용한 곳을 선호하는 개발자",
+        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_shorts" } } 
+    },
+  ]
 
 const PURPOSE_FILTERS: Record<string, any> = {
     "식사": {
@@ -555,7 +564,7 @@ export function HomeTab() {
           <DialogContent>
               <DialogHeader><DialogTitle>친구 선택</DialogTitle></DialogHeader>
               <div className="py-2 space-y-2">
-                  {DEMO_FRIENDS.map(f => (
+                  {AI_PERSONAS.map(f => (
                       <div key={f.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg cursor-pointer" onClick={() => toggleFriend(f)}>
                           <div className="flex items-center gap-3"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.location}</div></div></div>
                           {selectedFriends.find(sf => sf.id === f.id) && <Check className="w-5 h-5 text-blue-600"/>}
