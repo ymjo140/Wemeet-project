@@ -146,6 +146,8 @@ class Event(Base):
     duration_hours = Column(Float, default=1.5)
     location_name = Column(String, nullable=True)
     purpose = Column(String)
+    # 🌟 [신규] 공개 여부 (기본: 공개)
+    is_private = Column(Boolean, default=False)
 
 class Community(Base):
     __tablename__ = "communities"
