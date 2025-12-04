@@ -1,8 +1,8 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation" // 👈 라우터 추가
-import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,29 +15,33 @@ import { Slider } from "@/components/ui/slider"
 
 declare global { interface Window { naver: any; } }
 
-// 🌟 [수정] AI 페르소나 4인방 (테스트용)
+// 🌟 [수정됨] AI 페르소나 4인방 (구조를 지도 로직에 맞게 통일)
 const AI_PERSONAS = [
-    { 
-        id: 2, name: "김직장 (강남)", location: "강남역", lat: 37.498, lng: 127.027, 
-        desc: "퇴근 후 한잔을 좋아하는 직장인",
-        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_jeans" } } 
-    },
-    { 
-        id: 3, name: "이대학 (홍대)", location: "홍대입구", lat: 37.557, lng: 126.924, 
-        desc: "가성비와 힙한 곳을 찾는 대학생",
-        avatar: { equipped: { body: "body_basic", hair: "hair_02", top: "top_tshirt", bottom: "bottom_shorts" } } 
-    },
-    { 
-        id: 4, name: "박감성 (성수)", location: "성수역", lat: 37.544, lng: 127.056, 
-        desc: "분위기 좋은 카페/전시 마니아",
-        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans" } } 
-    },
-    { 
-        id: 5, name: "최개발 (판교)", location: "판교역", lat: 37.394, lng: 127.111, 
-        desc: "조용한 곳을 선호하는 개발자",
-        avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_shorts" } } 
-    },
-  ]
+  { 
+      id: 2, name: "김직장 (강남)", locationName: "강남역", 
+      location: { lat: 37.498085, lng: 127.027621 },
+      desc: "퇴근 후 한잔을 좋아하는 직장인",
+      avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } 
+  },
+  { 
+      id: 3, name: "이대학 (홍대)", locationName: "홍대입구", 
+      location: { lat: 37.557527, lng: 126.924467 },
+      desc: "가성비와 힙한 곳을 찾는 대학생",
+      avatar: { equipped: { body: "body_basic", hair: "hair_02", top: "top_tshirt", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } 
+  },
+  { 
+      id: 4, name: "박감성 (성수)", locationName: "성수역", 
+      location: { lat: 37.544581, lng: 127.056035 },
+      desc: "분위기 좋은 카페/전시 마니아",
+      avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans", shoes: "shoes_sneakers" } } 
+  },
+  { 
+      id: 5, name: "최개발 (판교)", locationName: "판교역", 
+      location: { lat: 37.394761, lng: 127.111217 },
+      desc: "조용한 곳을 선호하는 개발자",
+      avatar: { equipped: { body: "body_basic", hair: "hair_01", top: "top_hoodie", bottom: "bottom_shorts", shoes: "shoes_sneakers" } } 
+  },
+]
 
 const PURPOSE_FILTERS: Record<string, any> = {
     "식사": {
@@ -93,12 +97,9 @@ const PURPOSE_FILTERS: Record<string, any> = {
 const MAP_CATEGORIES = ["전체", "맛집", "카페", "술집", "편의점", "은행", "마트"];
 
 export function HomeTab() {
-  const router = useRouter(); // 👈 [추가됨] 라우터 훅 사용
-  
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("")
   const [myLocationInput, setMyLocationInput] = useState("") 
-  
-  // 다중 입력 상태
   const [manualInputs, setManualInputs] = useState<string[]>([""]); 
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
@@ -123,7 +124,6 @@ export function HomeTab() {
   const [placeToShare, setPlaceToShare] = useState<any>(null);
   const [myRooms, setMyRooms] = useState<any[]>([]);
   
-  // 상세 리뷰 모달 상태
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [placeReviews, setPlaceReviews] = useState<any[]>([]);
@@ -141,7 +141,6 @@ export function HomeTab() {
     const fetchMyInfo = async () => {
         const token = localStorage.getItem("token");
         if (!token) {
-             // 비로그인 상태 (게스트 모드)
              setMyProfile(null);
              setMyLocationInput("비회원 (위치 설정 필요)");
              return;
@@ -194,12 +193,6 @@ export function HomeTab() {
                     ${hair ? `<img src="${hair}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 6;" />` : ''}
                 </div>
                 <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${user.name.split('(')[0]}</div>
-                <style>
-                    @keyframes walk { from { transform: translateY(0); } to { transform: translateY(-4px); } }
-                    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-                    @keyframes stepLeft { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(0.5) translateY(10px); } }
-                    @keyframes stepRight { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(0.5) translateY(10px); } }
-                </style>
             </div>
           `;
 
@@ -248,7 +241,7 @@ export function HomeTab() {
 
   const fetchRecommendations = async (users: any[], locationNameOverride?: string) => {
     const validUsers = users.filter(u => u !== null && u !== undefined);
-    // 참여자가 0명이어도 수동 입력이 있으면 검색 가능하도록 수정됨
+    if (validUsers.length === 0) return;
 
     setLoading(true);
     try {
@@ -300,10 +293,7 @@ export function HomeTab() {
   const handleSubmitReview = async () => {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
-      if (!token) {
-          if(confirm("리뷰를 작성하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login");
-          return;
-      }
+      if (!token) { if(confirm("리뷰를 작성하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login"); return; }
       const payload = {
           place_name: selectedPlace.name,
           rating: 0, 
@@ -332,10 +322,7 @@ export function HomeTab() {
   const handleToggleFavorite = async () => {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
-      if (!token) {
-          if(confirm("즐겨찾기를 하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login");
-          return;
-      }
+      if (!token) { if(confirm("즐겨찾기를 하려면 로그인이 필요합니다. 이동할까요?")) router.push("/login"); return; }
       try {
           const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -348,16 +335,9 @@ export function HomeTab() {
       } catch (e) { alert("오류 발생"); }
   };
 
-  // 🌟 [수정] 공유하기 로그인 체크
   const handleShare = async (roomId: string) => {
       const token = localStorage.getItem("token");
-      if (!token) {
-          if (confirm("로그인이 필요한 기능입니다. 로그인하시겠습니까?")) {
-              router.push("/login");
-          }
-          return;
-      }
-
+      if (!token) { if (confirm("로그인이 필요한 기능입니다. 로그인하시겠습니까?")) { router.push("/login"); } return; }
       if (!placeToShare) return;
       try {
           await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", {
@@ -379,10 +359,8 @@ export function HomeTab() {
   const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], searchQuery); }
   
   const handleMidpointSearch = () => {
-      // 🌟 내 위치 포함 여부에 따라 참가자 목록 구성
       const participants = (includeMe && myProfile) ? [myProfile, ...selectedFriends] : [...selectedFriends];
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
-      
       if (participants.length === 0 && !hasManualInput) {
           alert("출발지를 하나 이상 설정해주세요!");
           return;
@@ -420,6 +398,13 @@ export function HomeTab() {
   };
   const handleTabChange = (idx: number) => { setActiveTabIdx(idx); setCurrentDisplayRegion(recommendedRegions[idx]); setIsExpanded(false); };
 
+  // 🌟 [신규] 현재 위치로 이동 버튼 핸들러
+  const moveToMyLocation = () => {
+    if (myProfile?.location && mapRef.current) {
+        mapRef.current.morph(new window.naver.maps.LatLng(myProfile.location.lat, myProfile.location.lng));
+    }
+  }
+
   const visiblePlaces = currentDisplayRegion 
       ? (isExpanded ? currentDisplayRegion.places : currentDisplayRegion.places.slice(0, 3)) 
       : [];
@@ -428,7 +413,6 @@ export function HomeTab() {
 
   return (
     <div className="h-full overflow-y-auto pb-20 bg-background flex flex-col">
-      {/* 상단 검색 */}
       <div className="px-4 pt-4 pb-2 sticky top-0 z-20 bg-white shadow-sm space-y-2">
         <div className="relative flex items-center shadow-sm rounded-lg bg-gray-100">
             <div className="pl-3 text-muted-foreground"><Search className="w-5 h-5" /></div>
@@ -453,24 +437,28 @@ export function HomeTab() {
                     }
                 }
                 if (!parentKey) return null;
-                return (<Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">{tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/></Badge>)
+                return (
+                    <Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">
+                        {tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/>
+                    </Badge>
+                )
             })}
         </div>
       </div>
 
-      {/* 지도 */}
       <div className="relative h-64 border-b w-full">
           <div id="map" className="w-full h-full bg-muted"></div>
           <div className="absolute bottom-3 left-3 bg-white/95 px-3 py-1.5 rounded-full text-xs font-bold shadow-md text-primary border border-primary/20 flex items-center gap-1">
-              📍 {currentDisplayRegion ? currentDisplayRegion.region_name : (myProfile?.locationName || "내 위치")}
+              📍 {currentDisplayRegion ? currentDisplayRegion.region_name : (myProfile?.locationName || "위치 찾는 중...")}
           </div>
+          <Button variant="secondary" size="icon" className="absolute bottom-3 right-3 rounded-full shadow-md h-8 w-8 bg-white border" onClick={moveToMyLocation}>
+              <Locate className="w-4 h-4 text-gray-600"/>
+          </Button>
       </div>
 
-      {/* 출발지 입력 섹션 */}
       <div className="px-4 py-5 border-b bg-white">
         <h2 className="text-lg font-bold mb-3">어디서 출발하나요?</h2>
         <div className="space-y-3">
-            {/* 내 위치 */}
             {includeMe ? (
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm">👤</div>
@@ -481,18 +469,16 @@ export function HomeTab() {
                 </div>
             ) : null}
 
-            {/* 친구 목록 */}
             {selectedFriends.map(friend => (
                 <div key={friend.id} className="flex items-center gap-2">
                     <Avatar className="w-8 h-8 border"><AvatarFallback>{friend.name[0]}</AvatarFallback></Avatar>
                     <div className="flex-1 relative">
-                        <Input className="bg-white border-blue-200 text-blue-600 font-bold pr-8" value={`${friend.name} (${friend.location})`} readOnly />
+                        <Input className="bg-white border-blue-200 text-blue-600 font-bold pr-8" value={`${friend.name} (${friend.locationName})`} readOnly />
                         <button onClick={() => toggleFriend(friend)} className="absolute right-2 top-2 text-gray-400 hover:text-red-500"><X className="w-4 h-4"/></button>
                     </div>
                 </div>
             ))}
 
-            {/* 수동 입력 (자동완성) */}
             {manualInputs.map((input, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                     <div className="w-8 h-8 flex items-center justify-center text-gray-400"><MapPin className="w-5 h-5"/></div>
@@ -516,14 +502,13 @@ export function HomeTab() {
                      <Locate className="w-4 h-4 mr-1"/> 내 위치 다시 추가
                  </Button>
              )}
-             <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-1"/> 친구 추가</Button>
+             <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-1"/> 👪 AI 페르소나 추가</Button>
              <Button variant="outline" onClick={addManualInput}><Plus className="w-4 h-4 mr-1"/> 장소 추가</Button>
         </div>
         
         <Button className="w-full mt-4 h-10 font-bold bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleMidpointSearch}>🚀 중간지점 찾기</Button>
       </div>
 
-      {/* 상세 필터 모달 */}
       <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
           <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
               <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b"><DialogTitle>상세 필터 설정</DialogTitle></DialogHeader>
@@ -559,14 +544,16 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 친구 선택 모달 */}
       <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
           <DialogContent>
-              <DialogHeader><DialogTitle>친구 선택</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>AI 페르소나 친구 선택</DialogTitle></DialogHeader>
               <div className="py-2 space-y-2">
                   {AI_PERSONAS.map(f => (
-                      <div key={f.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg cursor-pointer" onClick={() => toggleFriend(f)}>
-                          <div className="flex items-center gap-3"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.location}</div></div></div>
+                      <div key={f.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer border" onClick={() => toggleFriend(f)}>
+                          <div className="flex items-center gap-3">
+                              <Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar>
+                              <div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName} · {f.desc}</div></div>
+                          </div>
                           {selectedFriends.find(sf => sf.id === f.id) && <Check className="w-5 h-5 text-blue-600"/>}
                       </div>
                   ))}
@@ -574,7 +561,6 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 공유하기 모달 */}
       <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
           <DialogContent className="sm:max-w-sm">
               <DialogHeader><DialogTitle>채팅방에 공유하기</DialogTitle></DialogHeader>
@@ -588,7 +574,6 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 🌟 장소 상세 및 리뷰 모달 */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
           <DialogContent className="sm:max-w-md h-[80vh] flex flex-col">
               <DialogHeader>
@@ -629,7 +614,6 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 추천 결과 리스트 */}
       {recommendedRegions.length > 0 && (
         <div className="px-4 py-5 bg-white border-t">
             <h2 className="text-lg font-bold mb-3 flex items-center gap-2"><MapPin className="w-5 h-5 text-blue-600"/> 추천 장소</h2>
@@ -653,26 +637,19 @@ export function HomeTab() {
   )
 }
 
-// [내부 컴포넌트] 자동완성 입력
 function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
-
     useEffect(() => {
         if (value.length < 2) { setSuggestions([]); return; }
         const timer = setTimeout(async () => {
             try {
                 const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/places/search?query=${value}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setSuggestions(data);
-                    setShowSuggestions(true);
-                }
+                if (res.ok) { const data = await res.json(); setSuggestions(data); setShowSuggestions(true); }
             } catch {}
         }, 300);
         return () => clearTimeout(timer);
     }, [value]);
-
     return (
         <div className="relative w-full">
             <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} onFocus={() => value.length >= 2 && setShowSuggestions(true)} />
