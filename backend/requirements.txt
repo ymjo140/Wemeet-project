@@ -10,3 +10,4 @@ python-jose[cryptography]
 httpx
 websockets
 numpy
+python-multipart
