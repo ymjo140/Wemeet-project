@@ -145,7 +145,7 @@ export function HomeTab() {
              return;
         }
         try {
-            const res = await fetch("http://127.0.0.1:8000/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
+            const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
             if (res.ok) {
                 const user = await res.json();
                 setMyProfile({ ...user, locationName: "현위치" });
@@ -255,7 +255,7 @@ export function HomeTab() {
       const allTags = Object.values(selectedFilters).flat();
       const usersToSend = validUsers.map(u => ({ id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.566, lng: 126.978 } }));
 
-      const response = await fetch('http://127.0.0.1:8000/api/recommend', {
+      const response = await fetch('https://wemeet-backend-xqlo.onrender.com/api/recommend', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           users: usersToSend,
@@ -280,7 +280,7 @@ export function HomeTab() {
   const fetchMyRooms = async () => {
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/chat/rooms", { headers: { "Authorization": `Bearer ${token}` } });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/rooms", { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) setMyRooms(await res.json());
       } catch (e) {}
   };
@@ -293,7 +293,7 @@ export function HomeTab() {
       if (myProfile?.favorites?.some((f: any) => f.id === place.id)) setIsFavorite(true);
       else setIsFavorite(false);
       try {
-          const res = await fetch(`http://127.0.0.1:8000/api/reviews/${place.name}`);
+          const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/reviews/${place.name}`);
           if (res.ok) setPlaceReviews(await res.json());
       } catch (e) { console.error(e); }
   };
@@ -312,7 +312,7 @@ export function HomeTab() {
           tags: selectedPlace.tags
       };
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/reviews", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify(payload)
           });
@@ -330,7 +330,7 @@ export function HomeTab() {
       if (!selectedPlace) return;
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/favorites", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/favorites", {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({ place_id: selectedPlace.id, place_name: selectedPlace.name })
           });
@@ -345,7 +345,7 @@ export function HomeTab() {
       if (!placeToShare) return;
       const token = localStorage.getItem("token");
       try {
-          await fetch("http://127.0.0.1:8000/api/chat/share", {
+          await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/share", {
               method: "POST",
               headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({

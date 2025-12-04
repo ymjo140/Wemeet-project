@@ -52,7 +52,7 @@ export function MyPageTab() {
       const token = localStorage.getItem("token");
       if (!token) return;
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) {
               const data = await res.json();
               setUser(data);
@@ -63,7 +63,7 @@ export function MyPageTab() {
 
   const fetchShopItems = async () => {
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/shop/items");
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/shop/items");
           if (res.ok) setShopItems(await res.json());
       } catch (e) { console.error(e); }
   };
@@ -76,7 +76,7 @@ export function MyPageTab() {
       if (user.wallet_balance < item.price_coin) { alert("코인 부족!"); return; }
       if (confirm(`구매?`)) {
           const token = localStorage.getItem("token");
-          const res = await fetch("http://127.0.0.1:8000/api/shop/buy", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/shop/buy", {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({ item_id: item.id })
           });
@@ -86,7 +86,7 @@ export function MyPageTab() {
 
   const handleEquip = async (item: AvatarItem) => {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://127.0.0.1:8000/api/avatar/equip", {
+      const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/avatar/equip", {
           method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
           body: JSON.stringify({ category: item.category, item_id: item.id })
       });
@@ -113,7 +113,7 @@ export function MyPageTab() {
       };
 
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/reviews", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", {
               method: "POST",
               headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify(payload)

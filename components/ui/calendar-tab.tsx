@@ -71,7 +71,7 @@ export function CalendarTab() {
 
   const fetchEvents = async () => { 
       try { 
-          const res = await fetch('http://127.0.0.1:8000/api/events', { cache: 'no-store' }); 
+          const res = await fetch('https://wemeet-backend-xqlo.onrender.com/api/events', { cache: 'no-store' }); 
           if (res.ok) {
               const data = await res.json();
               setEvents(data); 
@@ -89,8 +89,8 @@ export function CalendarTab() {
     
     const isEditMode = isEditing && (formData as Event).id;
     const url = isEditMode
-        ? `http://127.0.0.1:8000/api/events/${(formData as Event).id}` 
-        : 'http://127.0.0.1:8000/api/events';
+        ? `https://wemeet-backend-xqlo.onrender.com/api/events/${(formData as Event).id}` 
+        : 'https://wemeet-backend-xqlo.onrender.com/api/events';
     const method = isEditMode ? 'PUT' : 'POST';
     
     const payload = { ...formData, user_id: selectedFriendId };
@@ -125,7 +125,7 @@ export function CalendarTab() {
         try {
             setEvents(prev => prev.filter(e => e.id !== id));
             setShowForm(false);
-            const res = await fetch(`http://127.0.0.1:8000/api/events/${id}`, { method: 'DELETE' }); 
+            const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/events/${id}`, { method: 'DELETE' }); 
             if (res.ok) { alert("삭제되었습니다."); } else { alert("이미 삭제되었거나 존재하지 않는 일정입니다."); }
             fetchEvents();
         } catch (e) { console.error(e); }

@@ -27,7 +27,7 @@ export default function WeMeetApp() {
         
         // 취향 설정 여부 확인
         try {
-            const res = await fetch("http://127.0.0.1:8000/api/users/me", {
+            const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             if (res.ok) {

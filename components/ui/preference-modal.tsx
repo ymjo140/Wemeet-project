@@ -35,7 +35,7 @@ export function PreferenceModal({ isOpen, onClose, onSave }: { isOpen: boolean; 
     if (!token) return
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/users/me/preferences", {
+      const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me/preferences", {
         method: "PUT",
         headers: { 
             "Content-Type": "application/json",

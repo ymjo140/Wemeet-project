@@ -19,7 +19,7 @@ export default function KakaoCallback() {
         console.log("🚀 카카오 인가 코드:", code) // 1. 코드 확인
 
         try {
-          const res = await fetch("http://127.0.0.1:8000/api/auth/kakao", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/auth/kakao", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ code }),

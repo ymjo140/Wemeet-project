@@ -22,7 +22,7 @@ export default function LoginPage() {
     formData.append("password", password)
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/login", {
+      const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/login", {
         method: "POST",
         body: formData,
       })

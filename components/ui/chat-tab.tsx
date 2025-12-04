@@ -110,7 +110,7 @@ export function ChatTab() {
 
   const fetchRooms = async () => {
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/chat/rooms", { headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/rooms", { headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
           if (res.ok) setChatRooms(await res.json());
       } catch (e) { console.error(e); }
   }
@@ -119,7 +119,7 @@ export function ChatTab() {
       setCurrentRoom(room);
       setView('CHAT');
       setMessages([]);
-      const ws = new WebSocket(`ws://127.0.0.1:8000/ws/${room.id}/${myId}`);
+      const ws = new WebSocket(`wss://wemeet-backend-xqlo.onrender.com/ws/${room.id}/${myId}`);
       
       ws.onmessage = (event) => {
           try {
@@ -150,7 +150,7 @@ export function ChatTab() {
 
       if (aiMode === "schedule") {
           try {
-              const res = await fetch('http://127.0.0.1:8000/api/ai/parse-schedule', {
+              const res = await fetch('https://wemeet-backend-xqlo.onrender.com/api/ai/parse-schedule', {
                   method: 'POST', headers: {'Content-Type': 'application/json'},
                   body: JSON.stringify({ text: inputText })
               });
@@ -173,7 +173,7 @@ export function ChatTab() {
   const handleVote = async (messageId: number) => {
     const token = localStorage.getItem("token");
     try {
-        await fetch("http://127.0.0.1:8000/api/chat/vote", {
+        await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/vote", {
             method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
             body: JSON.stringify({ message_id: messageId, vote_type: "up" })
         });
@@ -190,7 +190,7 @@ export function ChatTab() {
       const dateStr = `${tempDate.getFullYear()}-${String(tempDate.getMonth()+1).padStart(2,'0')}-${String(tempDate.getDate()).padStart(2,'0')} 19:00`;
 
       try {
-          await fetch("http://127.0.0.1:8000/api/chat/confirm", {
+          await fetch("https://wemeet-backend-xqlo.onrender.com/api/chat/confirm", {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({
                   room_id: currentRoom.id,
@@ -205,7 +205,7 @@ export function ChatTab() {
       if (!parsedSchedule) return;
       const token = localStorage.getItem("token");
       try {
-          await fetch('http://127.0.0.1:8000/api/events', {
+          await fetch('https://wemeet-backend-xqlo.onrender.com/api/events', {
               method: 'POST', 
               headers: {'Content-Type': 'application/json', "Authorization": `Bearer ${token}`},
               body: JSON.stringify({ ...parsedSchedule, user_id: myId })
@@ -238,7 +238,7 @@ export function ChatTab() {
       }]);
 
       try {
-          const res = await fetch('http://127.0.0.1:8000/api/meeting-flow', {
+          const res = await fetch('https://wemeet-backend-xqlo.onrender.com/api/meeting-flow', {
               method: 'POST', headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({
                   room_id: currentRoom.id, 

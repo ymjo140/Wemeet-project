@@ -52,7 +52,7 @@ export function CommunityTab() {
 
   const fetchCommunities = async () => {
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/communities", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/communities", {
               headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
           });
           if (res.ok) setCommunities(await res.json());
@@ -62,7 +62,7 @@ export function CommunityTab() {
   const handleCreate = async () => {
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch("http://127.0.0.1:8000/api/communities", {
+          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/communities", {
               method: "POST",
               headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({
@@ -85,7 +85,7 @@ export function CommunityTab() {
       if (!token) return alert("로그인이 필요합니다.");
 
       try {
-          const res = await fetch(`http://127.0.0.1:8000/api/communities/${communityId}/join`, {
+          const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/communities/${communityId}/join`, {
               method: "POST",
               headers: { "Authorization": `Bearer ${token}` }
           });
