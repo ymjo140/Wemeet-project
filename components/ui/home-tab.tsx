@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate } from "lucide-react"
+import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import { Slider } from "@/components/ui/slider"
 
 declare global { interface Window { naver: any; } }
 
-// AI 페르소나 4인방 (지도 로직에 맞게 수정됨)
+// AI 페르소나 4인방
 const AI_PERSONAS = [
   { 
       id: 2, name: "김직장 (강남)", locationName: "강남역", 
@@ -94,13 +94,10 @@ const PURPOSE_FILTERS: Record<string, any> = {
     }
 };
 
-const MAP_CATEGORIES = ["전체", "맛집", "카페", "술집", "편의점", "은행", "마트"];
-
 export function HomeTab() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("")
   const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...") 
-  
   const [manualInputs, setManualInputs] = useState<string[]>([""]); 
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
   const [includeMe, setIncludeMe] = useState(true);
@@ -133,12 +130,13 @@ export function HomeTab() {
   const [reviewText, setReviewText] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   
+  const [myFriendList, setMyFriendList] = useState<any[]>([]);
+  
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
   const myMarkerRef = useRef<any>(null)
   const friendMarkersRef = useRef<any[]>([])
 
-  // 1. 내 정보 및 GPS
   useEffect(() => {
     const fetchMyInfo = async () => {
         const token = localStorage.getItem("token");
@@ -153,6 +151,11 @@ export function HomeTab() {
                 const user: any = await res.json();
                 setMyProfile({ ...user, locationName: "현위치" });
                 setMyLocationInput("📍 현위치 (GPS)");
+            }
+            const friendRes = await fetch("https://wemeet-backend-xqlo.onrender.com/api/friends", { headers: { "Authorization": `Bearer ${token}` } });
+            if (friendRes.ok) {
+                const data: any = await friendRes.json();
+                setMyFriendList(data.friends);
             }
         } catch (e) { console.error(e); }
     }
@@ -169,7 +172,12 @@ export function HomeTab() {
     }
   }, []);
 
-  // 2. 지도 및 마커
+  const handleKakaoInvite = () => {
+      const inviteLink = "https://v0-we-meet-app-features.vercel.app";
+      navigator.clipboard.writeText(inviteLink);
+      alert("카카오톡 초대 링크가 복사되었습니다! 친구에게 공유하세요.");
+  };
+
   useEffect(() => {
     const initMap = () => {
       if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
@@ -192,6 +200,9 @@ export function HomeTab() {
           const pet = getUrl(equipped.pet);
           const foot = getUrl(equipped.footprint);
 
+          // 🌟 [수정] 안전한 이름 처리 (split 에러 방지)
+          const displayName = (user.name || "User").split('(')[0];
+
           const avatarHtml = `
             <div style="position: relative; width: 60px; height: 110px; display: flex; justify-content: center; pointer-events: none;">
                 ${foot ? `<div class="footprints" style="position: absolute; bottom: 5px; width: 100%;"><img src="${foot}" style="position: absolute; left: 10px; width: 20px; opacity: 0; animation: stepLeft 1s infinite;" /><img src="${foot}" style="position: absolute; right: 10px; width: 20px; opacity: 0; animation: stepRight 1s infinite 0.5s;" /></div>` : ''}
@@ -205,7 +216,7 @@ export function HomeTab() {
                     ${shoes ? `<img src="${shoes}" style="position: absolute; bottom: 0; left: 10%; width: 80%; height: 20%; object-fit: contain; z-index: 5;" />` : ''}
                     ${hair ? `<img src="${hair}" style="position: absolute; top:0; left:0; width:100%; height:100%; object-fit: contain; z-index: 6;" />` : ''}
                 </div>
-                <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${user.name.split('(')[0]}</div>
+                <div style="position: absolute; bottom: -10px; background: ${isMe ? '#3b82f6' : 'white'}; color: ${isMe ? 'white' : 'black'}; padding: 1px 6px; border-radius: 10px; border: 1px solid #3b82f6; font-size: 10px; font-weight: bold; white-space: nowrap; z-index: 20;">${displayName}</div>
             </div>
           `;
           return new window.naver.maps.Marker({
@@ -331,15 +342,7 @@ export function HomeTab() {
       } catch (e) { alert("공유 실패"); }
   };
 
-  // 🌟 [신규] 카카오톡 초대 (링크 복사)
-  const handleKakaoInvite = () => {
-      const inviteLink = "https://v0-we-meet-app-features.vercel.app";
-      navigator.clipboard.writeText(inviteLink);
-      alert("카카오톡 초대 링크가 복사되었습니다! 친구에게 공유하세요.");
-  };
-
   const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], searchQuery); }
-  
   const handleMidpointSearch = () => {
       const participants = (includeMe && myProfile) ? [myProfile, ...selectedFriends] : [...selectedFriends];
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
@@ -379,22 +382,7 @@ export function HomeTab() {
             <Button variant="outline" size="sm" className="h-8 rounded-full border-dashed text-xs flex-shrink-0" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1"/> 필터 설정</Button>
             <Badge variant="secondary" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-indigo-50 text-indigo-600 border-indigo-100">{currentFilters?.label || selectedPurpose}</Badge>
             {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => {
-                if (tag === selectedPurpose) return null;
-
-                let parentKey = "";
-                
-                if (currentFilters) {
-                  const tabs = currentFilters.tabs as Record<string, { label: string; options: string[] }>;
-                
-                  for (const [key, data] of Object.entries(tabs)) {
-                    if (data.options.includes(tag)) {
-                      parentKey = key;
-                      break;
-                    }
-                  }
-                }
-                
-                if (!parentKey) return null;
+                if (tag === selectedPurpose) return null; let parentKey = ""; if (currentFilters) { for (const [key, data] of Object.entries(currentFilters.tabs)) { if (data.options.includes(tag)) parentKey = key; } } if (!parentKey) return null;
                 return (<Badge key={tag} variant="outline" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 border-indigo-200 text-indigo-600 bg-white">{tag} <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => removeTag(tag)}/></Badge>)
             })}
         </div>
