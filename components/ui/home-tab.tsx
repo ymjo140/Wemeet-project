@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate } from "lucide-react"
+import { Check, Search, Map, MapPin, Train, User, X, Plus, Trash2, Users, ChevronDown, ChevronUp, Filter, Share, Star, Heart, MessageSquare, Locate, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import { Slider } from "@/components/ui/slider"
 
 declare global { interface Window { naver: any; } }
 
-// AI 페르소나 4인방
+// AI 페르소나 4인방 (지도 로직에 맞게 수정됨)
 const AI_PERSONAS = [
   { 
       id: 2, name: "김직장 (강남)", locationName: "강남역", 
@@ -149,13 +149,13 @@ export function HomeTab() {
         try {
             const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
             if (res.ok) {
-                const user = await res.json();
+                const user: any = await res.json();
                 setMyProfile({ ...user, locationName: "현위치" });
                 setMyLocationInput("📍 현위치 (GPS)");
             }
             const friendRes = await fetch("https://wemeet-backend-xqlo.onrender.com/api/friends", { headers: { "Authorization": `Bearer ${token}` } });
             if (friendRes.ok) {
-                const data = await friendRes.json() as any;
+                const data: any = await friendRes.json();
                 setMyFriendList(data.friends);
             }
         } catch (e) { console.error(e); }
@@ -240,7 +240,7 @@ export function HomeTab() {
       friendMarkersRef.current.forEach(m => m.setMap(null));
       friendMarkersRef.current = [];
       selectedFriends.forEach(friend => {
-          const friendWithAvatar = { ...friend, avatar: friend.avatar || { equipped: { body: "body_basic" } } };
+          const friendWithAvatar = { ...friend, avatar: friend.avatar || { equipped: { body: "body_basic", hair: "hair_01", top: "top_tshirt", bottom: "bottom_jeans" } } };
           const marker = createAvatarMarker(friendWithAvatar, false);
           friendMarkersRef.current.push(marker);
       });
@@ -345,7 +345,6 @@ export function HomeTab() {
   };
 
   const handleTopSearch = () => { if(searchQuery) fetchRecommendations([myProfile], searchQuery); }
-  
   const handleMidpointSearch = () => {
       const participants = (includeMe && myProfile) ? [myProfile, ...selectedFriends] : [...selectedFriends];
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
@@ -380,6 +379,7 @@ export function HomeTab() {
             <Input className="pl-2 border-none bg-transparent h-11" placeholder="장소, 주소 검색" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleTopSearch()} />
             {searchQuery && <button onClick={() => setSearchQuery("")} className="pr-3 text-gray-400"><X className="w-4 h-4"/></button>}
         </div>
+        
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <Button variant="outline" size="sm" className="h-8 rounded-full border-dashed text-xs flex-shrink-0" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1"/> 필터 설정</Button>
             <Badge variant="secondary" className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0 bg-indigo-50 text-indigo-600 border-indigo-100">{currentFilters?.label || selectedPurpose}</Badge>
@@ -541,11 +541,9 @@ export function HomeTab() {
   )
 }
 
-// [내부 컴포넌트] 자동완성 입력
 function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
-
     useEffect(() => {
         if (value.length < 1) { setSuggestions([]); return; }
         const timer = setTimeout(async () => {
@@ -555,6 +553,7 @@ function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, on
                 
                 if (res.ok) {
                     const data = await res.json() as any[];
+                    // 백엔드가 { title: "강남역", address: "주요 지하철역/거점" ... } 형태로 줍니다.
                     setSuggestions(data);
                     setShowSuggestions(true);
                 }
@@ -565,29 +564,14 @@ function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, on
 
         return () => clearTimeout(timer);
     }, [value]);
-
     return (
         <div className="relative w-full">
-            <Input 
-                placeholder={placeholder} 
-                value={value} 
-                onChange={(e) => onChange(e.target.value)} 
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} 
-                onFocus={() => value.length >= 1 && setShowSuggestions(true)}
-            />
+            <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} onFocus={() => value.length >= 1 && setShowSuggestions(true)} />
             {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute z-50 w-full bg-white border rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
                     {suggestions.map((item, idx) => (
-                        <div 
-                            key={idx} 
-                            className="p-2 hover:bg-gray-100 cursor-pointer text-sm flex justify-between items-center" 
-                            onClick={() => { 
-                                onChange(item.title); 
-                                setShowSuggestions(false); 
-                            }}
-                        >
-                            <span className="font-bold">{item.title}</span>
-                            {item.address && <span className="text-xs text-gray-400">{item.address}</span>}
+                        <div key={idx} className="p-2 hover:bg-gray-100 cursor-pointer text-sm" onClick={() => { onChange(item.title); setShowSuggestions(false); }}>
+                            <div className="font-bold">{item.title}</div><div className="text-xs text-gray-500">{item.address}</div>
                         </div>
                     ))}
                 </div>
