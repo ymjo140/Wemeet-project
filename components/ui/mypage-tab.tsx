@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MapPin, Settings, Bell, HelpCircle, LogOut, Palette, Coins, ShoppingBag, Heart, Star, MessageSquare, Pencil, Check, X } from "lucide-react" // 아이콘 추가
+import { MapPin, Settings, Bell, HelpCircle, LogOut, Palette, Coins, ShoppingBag, Heart, Star, MessageSquare, Pencil, Check, X, Utensils } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+// 🌟 취향 조사 모달 import
+import { PreferenceModal } from "@/components/ui/preference-modal"
 
 const CATEGORIES = [
   { id: "hair", label: "헤어", icon: "💇" },
@@ -28,12 +30,8 @@ interface UserInfo {
     avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; 
     favorites: { id: number; name: string }[]; 
     reviews: any[]; 
+    preferences?: any;
 }
-
-const VISIT_HISTORY = [
-    { id: 101, name: "감성타코 강남점", tags: ["멕시칸", "맛집", "시끌벅적"] },
-    { id: 102, name: "블루보틀 성수", tags: ["카페", "감성", "웨이팅"] },
-];
 
 export function MyPageTab() {
   const router = useRouter();
@@ -51,9 +49,11 @@ export function MyPageTab() {
   const [scores, setScores] = useState({ taste: 3, service: 3, price: 3, vibe: 3 });
   const [reviewText, setReviewText] = useState("");
 
-  // 🌟 [신규] 닉네임 변경 상태
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState("");
+
+  // 🌟 [신규] 취향 조사 모달 상태
+  const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
   const fetchMyInfo = async () => {
       const token = localStorage.getItem("token");
@@ -63,8 +63,13 @@ export function MyPageTab() {
           if (res.ok) {
               const data = await res.json();
               setUser(data);
-              setNewName(data.name); // 초기값 설정
+              setNewName(data.name); 
               if (data.avatar) setPreviewEquipped(data.avatar.equipped || {});
+
+              // 🌟 가입 직후 취향 정보가 없으면 자동으로 띄우기
+              if (!data.preferences || !data.preferences.foods || data.preferences.foods.length === 0) {
+                  setIsPreferenceModalOpen(true);
+              }
           } else { setIsGuest(true); }
       } catch (e) { setIsGuest(true); }
   };
@@ -100,7 +105,8 @@ export function MyPageTab() {
       if (!targetPlace) return;
       const token = localStorage.getItem("token");
       const payload = {
-          place_name: targetPlace.name, rating: 0, 
+          place_name: targetPlace.name || targetPlace.place_name,
+          rating: 0, 
           score_taste: scores.taste, score_service: scores.service, score_price: scores.price, score_vibe: scores.vibe,
           comment: reviewText, tags: targetPlace.tags || []
       };
@@ -112,7 +118,6 @@ export function MyPageTab() {
       } catch (e) { alert("오류 발생"); }
   };
 
-  // 🌟 [신규] 닉네임 변경 핸들러
   const handleUpdateName = async () => {
       if (!newName.trim()) return;
       const token = localStorage.getItem("token");
@@ -172,7 +177,6 @@ export function MyPageTab() {
                 <div className="flex items-center gap-4">
                     <div className="w-24 h-24 bg-white/20 rounded-full border-2 border-white/50 backdrop-blur-sm overflow-hidden relative">{renderAvatarLayered(user.avatar?.equipped || {}, 96)}</div>
                     <div className="flex-1">
-                        {/* 🌟 닉네임 수정 UI */}
                         {isEditingName ? (
                             <div className="flex items-center gap-2 mb-1">
                                 <Input value={newName} onChange={e => setNewName(e.target.value)} className="h-8 text-black bg-white/90 border-none w-32" />
@@ -194,17 +198,8 @@ export function MyPageTab() {
 
         <div className="px-1">
             <Tabs defaultValue="reviews" className="w-full">
-                <TabsList className="w-full grid grid-cols-3 mb-4"><TabsTrigger value="history">방문 기록</TabsTrigger><TabsTrigger value="reviews">내 리뷰</TabsTrigger><TabsTrigger value="favorites">즐겨찾기</TabsTrigger></TabsList>
+                <TabsList className="w-full grid grid-cols-2 mb-4"><TabsTrigger value="reviews">내 리뷰 & 방문 기록</TabsTrigger><TabsTrigger value="favorites">즐겨찾기</TabsTrigger></TabsList>
                 
-                <TabsContent value="history" className="space-y-3">
-                    {VISIT_HISTORY.map(place => (
-                        <Card key={place.id} className="p-3 flex justify-between items-center bg-white shadow-sm">
-                            <div><div className="font-bold text-sm">{place.name}</div><div className="text-xs text-gray-500 mt-1">{place.tags.join(" · ")}</div></div>
-                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setTargetPlace(place); setIsReviewOpen(true); }}>리뷰 쓰기</Button>
-                        </Card>
-                    ))}
-                </TabsContent>
-
                 <TabsContent value="reviews" className="space-y-3">
                     {user.reviews && user.reviews.length > 0 ? user.reviews.map((review: any) => (
                         <Card key={review.id} className="p-3 bg-white shadow-sm">
@@ -212,7 +207,7 @@ export function MyPageTab() {
                             <div className="grid grid-cols-4 gap-1 text-[10px] text-gray-500 bg-gray-50 p-2 rounded mb-2"><div>맛 {review.score_taste}</div><div>서비스 {review.score_service}</div><div>가격 {review.score_price}</div><div>분위기 {review.score_vibe}</div></div>
                             <p className="text-xs text-gray-700">{review.comment}</p>
                         </Card>
-                    )) : <div className="text-center text-gray-400 py-10 text-sm">작성한 리뷰가 없습니다.</div>}
+                    )) : <div className="text-center text-gray-400 py-10 text-sm">아직 작성한 리뷰나 방문 기록이 없습니다.<br/>모임을 갖고 리뷰를 남겨보세요!</div>}
                 </TabsContent>
                 
                 <TabsContent value="favorites" className="space-y-3">
@@ -224,7 +219,19 @@ export function MyPageTab() {
                 </TabsContent>
             </Tabs>
         </div>
-        <Card><CardHeader><CardTitle className="text-lg flex items-center gap-2"><Settings className="w-5 h-5 text-indigo-600" /> 설정</CardTitle></CardHeader><CardContent className="space-y-1"><Button variant="ghost" className="w-full justify-start gap-3 h-12"><Bell className="w-5 h-5" /> 알림 설정</Button><Button variant="ghost" className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-50 h-12" onClick={() => { if (confirm("로그아웃?")) { localStorage.removeItem("token"); window.location.href = "/login"; } }}><LogOut className="w-5 h-5" /> 로그아웃</Button></CardContent></Card>
+        
+        {/* 설정 카드 (취향 재설정 버튼 추가됨) */}
+        <Card>
+          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Settings className="w-5 h-5 text-indigo-600" /> 설정</CardTitle></CardHeader>
+          <CardContent className="space-y-1">
+            {/* 🌟 취향 재설정 버튼 */}
+            <Button variant="ghost" className="w-full justify-start gap-3 h-12" onClick={() => setIsPreferenceModalOpen(true)}>
+                <Utensils className="w-5 h-5" /> 취향 데이터 재설정
+            </Button>
+            <Button variant="ghost" className="w-full justify-start gap-3 h-12"><Bell className="w-5 h-5" /> 알림 설정</Button>
+            <Button variant="ghost" className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-50 h-12" onClick={() => { if (confirm("로그아웃?")) { localStorage.removeItem("token"); window.location.href = "/login"; } }}><LogOut className="w-5 h-5" /> 로그아웃</Button>
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
@@ -268,6 +275,16 @@ export function MyPageTab() {
               <DialogFooter><Button onClick={handleSubmitReview} className="w-full bg-indigo-600 hover:bg-indigo-700">제출하기</Button></DialogFooter>
           </DialogContent>
       </Dialog>
+
+      {/* 🌟 취향 조사 모달 컴포넌트 */}
+      <PreferenceModal 
+          isOpen={isPreferenceModalOpen} 
+          onClose={() => setIsPreferenceModalOpen(false)} 
+          onComplete={() => {
+              setIsPreferenceModalOpen(false);
+              fetchMyInfo(); // 정보 갱신
+          }} 
+      />
     </div>
   )
 }
