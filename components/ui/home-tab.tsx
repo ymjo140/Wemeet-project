@@ -494,28 +494,58 @@ export function HomeTab() {
   )
 }
 
+// components/ui/home-tab.tsx 파일 맨 아래에 있는 함수 교체
+
 function PlaceAutocomplete({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder: string }) {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
+
     useEffect(() => {
-        if (value.length < 2) { setSuggestions([]); return; }
+        if (value.length < 1) { setSuggestions([]); return; } // 한 글자만 쳐도 나오게 수정 (원하면 2로 변경)
+        
         const timer = setTimeout(async () => {
             try {
+                // 🌟 백엔드 API 호출 (이제 백엔드는 FALLBACK_COORDINATES만 뒤집니다)
+                // 주소는 본인의 백엔드 주소(Render)로 변경되어 있어야 합니다.
                 const res = await fetch(`https://wemeet-backend-xqlo.onrender.com/api/places/search?query=${value}`);
-                // 🌟 [수정] as any[] 추가
-                if (res.ok) { const data = await res.json() as any[]; setSuggestions(data); setShowSuggestions(true); }
-            } catch {}
-        }, 300);
+                
+                if (res.ok) {
+                    const data = await res.json() as any[];
+                    // 백엔드가 { title: "강남역", address: "주요 지하철역/거점" ... } 형태로 줍니다.
+                    setSuggestions(data);
+                    setShowSuggestions(true);
+                }
+            } catch (e) {
+                console.error("검색 실패:", e);
+            }
+        }, 200); // 딜레이를 200ms로 줄여서 더 빠르게 반응하도록 함
+
         return () => clearTimeout(timer);
     }, [value]);
+
     return (
         <div className="relative w-full">
-            <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} onFocus={() => value.length >= 2 && setShowSuggestions(true)} />
+            <Input 
+                placeholder={placeholder} 
+                value={value} 
+                onChange={(e) => onChange(e.target.value)} 
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} 
+                onFocus={() => value.length >= 1 && setShowSuggestions(true)}
+            />
             {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute z-50 w-full bg-white border rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
                     {suggestions.map((item, idx) => (
-                        <div key={idx} className="p-2 hover:bg-gray-100 cursor-pointer text-sm" onClick={() => { onChange(item.title); setShowSuggestions(false); }}>
-                            <div className="font-bold">{item.title}</div><div className="text-xs text-gray-500">{item.address}</div>
+                        <div 
+                            key={idx} 
+                            className="p-2 hover:bg-gray-100 cursor-pointer text-sm flex justify-between items-center" 
+                            onClick={() => { 
+                                onChange(item.title); // 클릭 시 해당 역 이름이 입력창에 들어감
+                                setShowSuggestions(false); 
+                            }}
+                        >
+                            <span className="font-bold">{item.title}</span>
+                            {/* address가 있으면 작게 보여줌 (예: 주요 거점) */}
+                            {item.address && <span className="text-xs text-gray-400">{item.address}</span>}
                         </div>
                     ))}
                 </div>
