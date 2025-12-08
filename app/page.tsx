@@ -21,11 +21,11 @@ export default function Page() {
         {/* 1. 홈 탭 */}
         {activeTab === "home" && <HomeTab />}
 
-        {/* 2. 커뮤니티 탭 (컴포넌트 연결) */}
-        {activeTab === "community" && <CommunityTab />}
-
-        {/* 3. 채팅 탭 (컴포넌트 연결) */}
+        {/* 2. 채팅 탭 (컴포넌트 연결) */}
         {activeTab === "chat" && <ChatTab />}
+
+        {/* 3. 커뮤니티 탭 (컴포넌트 연결) */}
+        {activeTab === "community" && <CommunityTab />}
 
         {/* 4. 일정 탭 (컴포넌트 연결) */}
         {activeTab === "calendar" && <CalendarTab />}
