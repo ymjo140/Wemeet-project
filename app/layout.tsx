@@ -25,7 +25,7 @@ export default function RootLayout({
         {/* strategy="beforeInteractive": 페이지 로드 전에 스크립트를 먼저 불러옵니다. */}
         <Script
           strategy="beforeInteractive"
-          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${process.env.NEXT_PUBLIC_NAVER_MAP_ID}`}
+          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${process.env.NEXT_PUBLIC_NAVER_MAP_ID}`}
         />
       </body>
     </html>
