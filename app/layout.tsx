@@ -1,37 +1,24 @@
-// app/layout.tsx
-
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
-import Script from "next/script"
-import "./globals.css"
-
-const inter = Inter({ subsets: ["latin"] })
+import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "WeMeet",
-  description: "AI Group Recommendation",
-}
+  title: "WeMeet - 우리 만남의 시작",
+  description: "중간 지점 찾기 및 장소 추천 서비스",
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
   return (
     <html lang="ko">
       <head>
-        {/* 👇 [추가됨] 보안 정책 강제 설정 (WebSocket 허용 포함) */}
-        
-        
-        {/* ✅ [기존 유지] 사용자님이 주신 새 ID와 ncpKeyId 적용 */}
-        <Script 
-          strategy="beforeInteractive" 
-          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=djsgmvkn5q`} 
-        />
+        <link rel="stylesheet" as="style" crossOrigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
       </head>
-      <body className={inter.className}>
+      <body className="font-['Pretendard'] antialiased bg-[#F3F4F6] text-gray-900">
         {children}
       </body>
     </html>
-  )
+  );
 }
