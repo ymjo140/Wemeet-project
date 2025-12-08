@@ -141,6 +141,48 @@ async def share_place(req: ShareRequest, current_user: models.User = Depends(get
     }, req.room_id)
     return {"message": "Shared"}
 
+@router.get("/api/chat/{room_id}/messages")
+def get_chat_history(room_id: str, db: Session = Depends(get_db)):
+    history = db.query(models.Message).filter(models.Message.room_id == room_id).order_by(models.Message.timestamp).all()
+    results = []
+    for msg in history:
+        sender = db.query(models.User).filter(models.User.id == msg.user_id).first()
+        vote_count = db.query(models.Vote).filter(models.Vote.message_id == msg.id).count()
+        try: 
+            cdata = json.loads(msg.content)
+            if isinstance(cdata, dict):
+                m_type = cdata.get("type", "text")
+                if m_type == "vote_card": cdata["vote_count"] = vote_count; final_content = json.dumps(cdata)
+                else: final_content = msg.content
+            else: m_type = "text"; final_content = json.dumps({"type": "text", "text": msg.content})
+        except: m_type = "text"; final_content = json.dumps({"type": "text", "text": msg.content})
+        results.append({ "user_id": msg.user_id, "name": sender.name if sender else "System", "avatar": "👤", "content": final_content, "type": m_type, "message_id": msg.id, "timestamp": msg.timestamp.strftime("%H:%M") })
+    return results
+
+class MessageRequest(BaseModel):
+    room_id: str
+    content: str
+    type: str = "text"
+
+@router.post("/api/chat/message")
+async def send_message(req: MessageRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Format content
+    if req.type == "text":
+        save_content = json.dumps({"type": "text", "text": req.content})
+    else:
+        save_content = req.content # Assume valid JSON string if not text type
+    
+    db_msg = models.Message(room_id=req.room_id, user_id=current_user.id, content=save_content, timestamp=datetime.now())
+    db.add(db_msg); db.commit(); db.refresh(db_msg)
+    
+    await manager.broadcast({ 
+        "user_id": current_user.id, "name": current_user.name, "avatar": "👤", 
+        "content": save_content, "type": req.type, "message_id": db_msg.id, 
+        "timestamp": datetime.now().strftime("%H:%M") 
+    }, req.room_id)
+    
+    return {"status": "sent", "message_id": db_msg.id}
+
 @router.post("/api/chat/vote")
 async def cast_vote(req: VoteRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     existing_vote = db.query(models.Vote).filter(models.Vote.message_id == req.message_id, models.Vote.user_id == current_user.id).first()
