@@ -9,6 +9,7 @@ import { Search, Heart, MapPin, Calendar, User, Plus, Loader2 } from "lucide-rea
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { fetchWithAuth } from "@/lib/api-client"
 
 // 백엔드 URL 직접 사용
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -18,6 +19,7 @@ export function CommunityTab() {
   const [loading, setLoading] = useState(false)
   
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  // 초기값들
   const [newMeeting, setNewMeeting] = useState({
       title: "", content: "", max_members: "4", location: "", date: "", time: "", category: "전체"
   })
@@ -38,20 +40,23 @@ export function CommunityTab() {
 
   const handleCreate = async () => {
       if (!newMeeting.title || !newMeeting.content) { alert("제목과 내용을 입력해주세요."); return; }
-      
+      if (!newMeeting.date || !newMeeting.time) { alert("날짜와 시간을 입력해주세요."); return; }
+
       try {
           const token = localStorage.getItem("token");
           
-          // 🌟 422 에러 해결: 숫자 필드(max_members)는 반드시 Number()로 변환
+          // 🌟 [핵심 수정] 422 에러 해결: 숫자와 날짜 형식 맞추기
           const payload = {
               title: newMeeting.title,
               content: newMeeting.content,
-              max_members: Number(newMeeting.max_members), // 문자열 -> 숫자 변환 필수
+              max_members: parseInt(newMeeting.max_members, 10), // 🌟 문자를 정수로 강제 변환
               location: newMeeting.location,
-              date_time: `${newMeeting.date} ${newMeeting.time}`,
+              date_time: `${newMeeting.date} ${newMeeting.time}`, // "YYYY-MM-DD HH:MM"
               category: newMeeting.category,
               tags: [newMeeting.category] 
           };
+
+          console.log("커뮤니티 생성 Payload:", payload); // 디버깅용
 
           const res = await fetch(`${API_URL}/api/communities`, {
               method: "POST",
@@ -70,7 +75,7 @@ export function CommunityTab() {
           } else {
               const err = await res.json();
               console.error(err);
-              alert("생성 실패: 입력 정보를 확인해주세요.");
+              alert(`생성 실패: ${JSON.stringify(err.detail || "입력 정보를 확인해주세요")}`);
           }
       } catch (e) { alert("오류가 발생했습니다."); }
   };

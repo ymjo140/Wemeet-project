@@ -6,8 +6,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input" 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { MoreHorizontal, Plus, ChevronLeft, ChevronRight, MapPin, Clock } from "lucide-react"
+import { fetchWithAuth } from "@/lib/api-client"
 
-// 백엔드 URL 직접 사용 (오류 방지)
+// 백엔드 URL 직접 사용
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 export function CalendarTab() {
@@ -17,7 +18,7 @@ export function CalendarTab() {
     
     // 일정 생성 모달 상태
     const [isCreateOpen, setIsCreateOpen] = useState(false)
-    // 🌟 duration(소요 시간) 필드 복구 (기본값 2시간)
+    // 🌟 초기값 설정 (duration은 문자열로 관리하다가 보낼 때 숫자로 변환)
     const [newEvent, setNewEvent] = useState({ title: "", location: "", time: "12:00", duration: "2" })
 
     const loadEvents = async () => {
@@ -39,15 +40,17 @@ export function CalendarTab() {
             const token = localStorage.getItem("token");
             const dateStr = selectedDate.toISOString().split('T')[0];
             
-            // 🌟 422 에러 방지: 숫자는 확실하게 Number()로 변환해서 전송
+            // 🌟 [핵심 수정] 백엔드가 원하는 타입으로 확실하게 변환
             const payload = {
                 title: newEvent.title,
-                date: dateStr,
-                time: newEvent.time,
-                duration: Number(newEvent.duration), // 🌟 문자를 숫자로 변환
+                date: dateStr, // "YYYY-MM-DD"
+                time: newEvent.time, // "HH:MM"
+                duration: parseInt(newEvent.duration, 10), // 🌟 문자를 정수(Integer)로 강제 변환
                 location_name: newEvent.location,
                 description: "개인 일정"
             };
+
+            console.log("전송 데이터:", payload); // 디버깅용 로그
 
             const res = await fetch(`${API_URL}/api/events`, {
                 method: "POST",
@@ -65,8 +68,8 @@ export function CalendarTab() {
                 setNewEvent({ title: "", location: "", time: "12:00", duration: "2" });
             } else {
                 const err = await res.json();
-                console.error("등록 실패:", err);
-                alert("등록 실패: 입력 값을 확인해주세요.");
+                console.error("등록 실패 로그:", err);
+                alert(`등록 실패: ${JSON.stringify(err.detail || "입력값을 확인해주세요")}`);
             }
         } catch(e) { alert("등록 중 오류 발생"); }
     }
@@ -159,7 +162,7 @@ export function CalendarTab() {
                 </Button>
             </div>
 
-            {/* 🌟 일정 생성 모달 (소요 시간 입력 복구됨) */}
+            {/* 🌟 일정 생성 모달 */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogContent className="sm:max-w-sm">
                     <DialogHeader><DialogTitle>새 일정 추가</DialogTitle></DialogHeader>
@@ -176,7 +179,7 @@ export function CalendarTab() {
                             </div>
                             <div className="flex-1">
                                 <label className="text-xs text-gray-500 mb-1 block">소요 시간(시간)</label>
-                                {/* 🌟 숫자 입력 필드 */}
+                                {/* 🌟 숫자 입력값 받기 */}
                                 <Input 
                                     type="number" 
                                     min={1} 
