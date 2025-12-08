@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+// 👇 1. Next.js 스크립트 컴포넌트 불러오기 (필수!)
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "WeMeet - 우리 만남의 시작",
@@ -18,6 +20,13 @@ export default function RootLayout({
       </head>
       <body className="font-['Pretendard'] antialiased bg-[#F3F4F6] text-gray-900">
         {children}
+
+        {/* 👇 2. 네이버 지도 API 스크립트 로드 (여기가 핵심!) */}
+        {/* strategy="beforeInteractive": 페이지 로드 전에 스크립트를 먼저 불러옵니다. */}
+        <Script
+          strategy="beforeInteractive"
+          src={`https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${process.env.NEXT_PUBLIC_NAVER_MAP_ID}`}
+        />
       </body>
     </html>
   );
