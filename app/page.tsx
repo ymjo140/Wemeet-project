@@ -1,14 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { Map, MessageCircle, Calendar, User, Users } from "lucide-react"
-
-// 🌟 모든 탭 컴포넌트 불러오기 (로직 생략 없음)
+// 🌟 이미 만드신 실제 컴포넌트들을 정확하게 임포트합니다.
 import { HomeTab } from "@/components/ui/home-tab"
-import { CommunityTab } from "@/components/ui/community-tab"
-import { ChatTab } from "@/components/ui/chat-tab"
-import { CalendarTab } from "@/components/ui/calendar-tab"
+import { CommunityTab } from "@/components/ui/community-tab" 
+import { ChatTab } from "@/components/ui/chat-tab" 
+import { CalendarTab } from "@/components/ui/calendar-tab" 
 import { MyPageTab } from "@/components/ui/mypage-tab"
+import { Map, MessageCircle, Calendar, User, Users } from "lucide-react"
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState("home")
@@ -18,24 +17,16 @@ export default function Page() {
       
       {/* 메인 콘텐츠 영역 */}
       <main className="flex-1 overflow-hidden relative">
-        {/* 1. 홈 탭 */}
+        {/* '준비 중' 텍스트 삭제함. 실제 컴포넌트가 렌더링됩니다. */}
         {activeTab === "home" && <HomeTab />}
-
-        {/* 2. 채팅 탭 (컴포넌트 연결) */}
-        {activeTab === "chat" && <ChatTab />}
-
-        {/* 3. 커뮤니티 탭 (컴포넌트 연결) */}
         {activeTab === "community" && <CommunityTab />}
-
-        {/* 4. 일정 탭 (컴포넌트 연결) */}
+        {activeTab === "chat" && <ChatTab />}
         {activeTab === "calendar" && <CalendarTab />}
-
-        {/* 5. 마이페이지 탭 */}
         {activeTab === "mypage" && <MyPageTab />}
       </main>
 
       {/* 하단 네비게이션 바 */}
-      <nav className="flex h-20 flex-shrink-0 items-center justify-around border-t border-gray-100 bg-white px-1 pb-2 z-30 rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
+      <nav className="flex h-20 flex-shrink-0 items-center justify-around border-t border-gray-100 bg-white px-2 pb-2 z-30 rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
         
         {/* 1. 홈 */}
         <button 
@@ -48,18 +39,7 @@ export default function Page() {
           <span className="text-[10px] font-bold">홈</span>
         </button>
 
-        {/* 2. 채팅 */}
-        <button 
-            onClick={() => setActiveTab("chat")} 
-            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
-                activeTab === "chat" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
-            }`}
-        >
-          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
-          <span className="text-[10px] font-medium">채팅</span>
-        </button>
-
-        {/* 3. 커뮤니티 */}
+        {/* 2. 커뮤니티 */}
         <button 
             onClick={() => setActiveTab("community")} 
             className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
@@ -68,6 +48,17 @@ export default function Page() {
         >
           <Users className={`w-6 h-6 ${activeTab === "community" ? "fill-[#7C3AED]/10" : ""}`} />
           <span className="text-[10px] font-medium">커뮤니티</span>
+        </button>
+
+        {/* 3. 채팅 */}
+        <button 
+            onClick={() => setActiveTab("chat")} 
+            className={`flex flex-col items-center gap-1 p-2 w-14 transition-all duration-300 ${
+                activeTab === "chat" ? "text-[#7C3AED] -translate-y-1" : "text-gray-300 hover:text-gray-400"
+            }`}
+        >
+          <MessageCircle className={`w-6 h-6 ${activeTab === "chat" ? "fill-[#7C3AED]/10" : ""}`} />
+          <span className="text-[10px] font-medium">채팅</span>
         </button>
 
         {/* 4. 일정 */}
