@@ -238,3 +238,27 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: int, d
             sender = db.query(models.User).filter(models.User.id == user_id).first()
             await manager.broadcast({ "user_id": user_id, "name": sender.name, "avatar": "👤", "content": save_content, "type": msg_type, "message_id": db_msg.id, "timestamp": datetime.now().strftime("%H:%M") }, room_id)
     except WebSocketDisconnect: manager.disconnect(websocket, room_id)
+
+@router.post("/api/chat/rooms/{room_id}/leave")
+def leave_chat_room(
+    room_id: str, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    # 1. 채팅방(커뮤니티) 찾기 (UUID 문자열이므로 str 타입 사용)
+    comm = db.query(models.Community).filter(models.Community.id == room_id).first()
+    if not comm:
+        raise HTTPException(status_code=404, detail="Chat room not found")
+
+    # 2. 멤버 목록 확인 및 제거
+    # SQLAlchemy의 ARRAY 타입이나 JSON 타입 리스트를 수정할 때는 list()로 복사 후 수정해야 함
+    members = list(comm.member_ids) if comm.member_ids else []
+    
+    if current_user.id in members:
+        members.remove(current_user.id)
+        comm.member_ids = members
+        flag_modified(comm, "member_ids") # 변경 사항을 ORM에 알림
+        db.commit()
+        return {"message": "Successfully left the chat room", "status": "left"}
+    
+    raise HTTPException(status_code=400, detail="User is not in the room")
