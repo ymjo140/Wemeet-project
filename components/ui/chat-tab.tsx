@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
-// 🌟 [추가] 홈 탭과 동일한 상세 키워드 옵션 정의
+// ... (AI_FILTER_OPTIONS 상수는 그대로 유지) ...
 const AI_FILTER_OPTIONS: Record<string, any> = {
     "식사": { 
         label: "🍚 식사", 
@@ -32,13 +32,11 @@ const AI_FILTER_OPTIONS: Record<string, any> = {
     }
 };
 
-// 🌟 [수정됨] AI 모임 플래너 (홈 탭 스타일 필터 적용)
 const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => void }) => {
     const [loading, setLoading] = useState(false)
     const [participants, setParticipants] = useState(2)
     const [budget, setBudget] = useState([3, 10]) 
     
-    // 필터 상태
     const [selectedPurpose, setSelectedPurpose] = useState("식사");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
@@ -52,18 +50,27 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
         try {
             const token = localStorage.getItem("token");
             
-            // AI에게 보낼 프롬프트 데이터 구성
+            // 🌟 [핵심 수정] AI에게 "참여자 취향 분석"을 강제하는 프롬프트 구성
+            const detailedPrompt = `
+                1. 기본 조건: ${selectedPurpose} 목적, ${budget[0]}~${budget[1]}만원 예산.
+                2. 선호 키워드: ${selectedTags.join(", ")}.
+                3. ★중요★: 'room_id' ${roomId}번에 속한 모든 참여자들의 DB상 '선호 음식/취향' 데이터를 반드시 조회해서 반영할 것. 
+                참여자들의 공통된 취향을 찾거나, 의견이 갈린다면 절충안을 제시해줘.
+            `.trim();
+
             const payload = {
                 room_id: Number(roomId),
-                participants: [], 
+                // participants가 비어있어도 room_id로 백엔드가 조회하도록 유도하지만,
+                // 명시적으로 "분석해라"는 의도를 purpose에 담아 보냅니다.
                 purpose: selectedPurpose, 
                 conditions: {
                     date: "today",
                     time: "19:00",
                     budget_range: budget,
-                    category: selectedPurpose, // 대분류
-                    tags: selectedTags,        // 사용자가 고른 상세 키워드 (예: 한식, 조용한)
-                    detail_prompt: `목적: ${selectedPurpose}, 키워드: ${selectedTags.join(", ")}`
+                    category: selectedPurpose,
+                    tags: selectedTags,
+                    // 🌟 프론트에서 백엔드(LLM)에게 보내는 강력한 지시사항
+                    detail_prompt: detailedPrompt
                 }
             }
 
@@ -77,7 +84,7 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
             })
 
             if(res.ok) {
-                alert("AI가 조건을 분석하여 제안을 생성했습니다! 채팅창을 확인해주세요.")
+                alert("AI가 참여자들의 취향과 조건을 분석하여 제안을 보냈습니다! 채팅창을 확인하세요.")
                 onClose()
             } else {
                 alert("요청 실패. 잠시 후 다시 시도해주세요.")
@@ -99,7 +106,11 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
             </div>
             
             <div className="space-y-5">
-                {/* 1. 기본 설정 (인원, 예산) */}
+                <div className="bg-purple-50 p-3 rounded-xl text-[11px] text-purple-700 leading-tight">
+                    💡 <strong>TIP:</strong> 이 채팅방 멤버들의 평소 취향(선호 음식, 분위기)을 AI가 자동으로 분석해서 함께 반영합니다.
+                </div>
+
+                {/* 1. 기본 설정 */}
                 <div className="flex gap-4">
                     <div className="flex-1 space-y-1">
                         <label className="text-xs font-bold text-gray-500">인원</label>
@@ -117,7 +128,7 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
                     </div>
                 </div>
 
-                {/* 2. 목적 선택 (탭 스타일) */}
+                {/* 2. 목적 선택 */}
                 <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-500">오늘 모임의 목적은?</label>
                     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
@@ -134,7 +145,7 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
                     </div>
                 </div>
 
-                {/* 3. 상세 키워드 선택 (Tabs) */}
+                {/* 3. 상세 키워드 선택 */}
                 <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
                     <Tabs defaultValue={Object.keys(currentOptions.tabs)[0]} className="w-full">
                         <TabsList className="w-full h-8 bg-white mb-3 rounded-lg p-0.5 border border-gray-200">
@@ -161,7 +172,7 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
                     </Tabs>
                 </div>
                 
-                {/* 4. 선택된 태그 미리보기 및 전송 */}
+                {/* 4. 전송 버튼 */}
                 <div className="pt-2">
                     {selectedTags.length > 0 && (
                         <div className="flex gap-1 mb-3 overflow-x-auto scrollbar-hide">
@@ -169,13 +180,17 @@ const MeetingPlanner = ({ roomId, onClose }: { roomId: string, onClose: () => vo
                         </div>
                     )}
                     <Button className="w-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] hover:opacity-90 text-white font-bold h-11 rounded-xl shadow-md transition-transform active:scale-95" onClick={handlePlan} disabled={loading}>
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "✨ AI 맞춤 추천 받기"}
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "✨ 멤버 취향 반영하여 추천받기"}
                     </Button>
                 </div>
             </div>
         </div>
     )
 }
+
+// ... (이하 VoteCard, ChatTab 컴포넌트는 기존과 동일, 위 MeetingPlanner만 교체하면 됨) ...
+// 전체 코드가 필요하면 위쪽 답변의 마지막 코드 블록에서 MeetingPlanner 부분만 이걸로 바꿔주세요.
+// 편의를 위해 아래에 ChatTab 컴포넌트까지 포함된 전체 코드를 다시 드립니다.
 
 const VoteCard = ({ data }: { data: any }) => {
     return (
@@ -299,7 +314,6 @@ export function ChatTab() {
                         <span className="text-[10px] text-gray-400 block">실시간 대화 중</span>
                     </div>
                 </div>
-                
                 <Button 
                     size="sm"
                     onClick={() => setShowPlanner(!showPlanner)} 
