@@ -387,7 +387,7 @@ export function HomeTab() {
       {!recommendations.length && (
           <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
             <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
-            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">s
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                 {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={()=>setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400"/></button></div>}
                 {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={()=>toggleFriend(f)}><X className="w-4 h-4 text-gray-400"/></button></div>)}
                 {manualInputs.map((val, i) => (
