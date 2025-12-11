@@ -234,23 +234,33 @@ class TransportEngine:
 
     @staticmethod
     def get_transit_time(start_lat, start_lng, end_lat, end_lng):
-        """ODsay API를 통해 대중교통 소요 시간(분)을 가져옵니다."""
+        """ODsay API를 통해 대중교통 소요 시간(분)을 가져옵니다. (최단 경로 기준)"""
         try:
             params = {
                 "SX": start_lng, "SY": start_lat,
                 "EX": end_lng, "EY": end_lat,
                 "apiKey": TransportEngine.ODSAY_API_KEY,
             }
+            # API 호출
             response = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
             
             if response.status_code == 200:
                 data = response.json()
                 if "result" in data and "path" in data["result"]:
-                    return data["result"]["path"][0]["info"]["totalTime"]
-        except Exception: pass
+                    paths = data["result"]["path"]
+                    
+                    # 🌟 [수정됨] 모든 경로를 순회하며 가장 짧은 소요 시간(min)을 찾아서 반환
+                    min_time = min(p["info"]["totalTime"] for p in paths)
+                    return min_time
+                    
+        except Exception as e:
+            # 에러 발생 시 로그 찍고 백업 로직으로 넘어감
+            print(f"⚠️ ODsay Error: {e}")
+            pass
         
-        # 실패 시 직선거리 기반 추정
+        # API 실패 또는 경로 없음 시: 직선거리 기반 추정 (백업 로직)
         dist_m = TransportEngine._haversine(start_lat, start_lng, end_lat, end_lng)
+        # 1km당 2분 + 기본 15분 (교통 체증 고려)
         return int((dist_m / 1000) * 2) + 15
 
     @staticmethod
