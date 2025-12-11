@@ -233,3 +233,14 @@ class Campaign(Base):
     max_applicants = Column(Integer) # 선착순 인원
     status = Column(String, default="open") # open(모집중), closed(마감)
     created_at = Column(DateTime, default=datetime.now)
+
+# 🌟 [신규] 주요 지점 간 이동 시간 캐시 (OD Matrix)
+class TravelTimeCache(Base):
+    __tablename__ = "travel_time_cache"
+    
+    # 복합 키 (출발지_도착지)
+    id = Column(String, primary_key=True) # 예: "강남_홍대입구"
+    start_name = Column(String, index=True)
+    end_name = Column(String, index=True)
+    total_time = Column(Integer) # 소요 시간(분)
+    created_at = Column(DateTime, default=datetime.now)

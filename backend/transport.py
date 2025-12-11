@@ -2,6 +2,8 @@ import math
 import requests
 import asyncio
 from typing import List, Dict
+from database import SessionLocal # DB 세션 추가
+import models
 
 class TransportEngine:
     # 🌟 [대규모 확장] 서울/경기/인천 주요 거점 및 환승역 좌표 DB
@@ -233,35 +235,38 @@ class TransportEngine:
         return R * c * 1000 # 미터 단위
 
     @staticmethod
-    def get_transit_time(start_lat, start_lng, end_lat, end_lng):
-        """ODsay API를 통해 대중교통 소요 시간(분)을 가져옵니다. (최단 경로 기준)"""
-        try:
-            params = {
-                "SX": start_lng, "SY": start_lat,
-                "EX": end_lng, "EY": end_lat,
-                "apiKey": TransportEngine.ODSAY_API_KEY,
-            }
-            # API 호출
-            response = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "result" in data and "path" in data["result"]:
-                    paths = data["result"]["path"]
-                    
-                    # 🌟 [수정됨] 모든 경로를 순회하며 가장 짧은 소요 시간(min)을 찾아서 반환
-                    min_time = min(p["info"]["totalTime"] for p in paths)
-                    return min_time
-                    
-        except Exception as e:
-            # 에러 발생 시 로그 찍고 백업 로직으로 넘어감
-            print(f"⚠️ ODsay Error: {e}")
-            pass
+    def get_transit_time_with_cache(start_name, end_name, start_lat, start_lng, end_lat, end_lng):
+        """
+        1순위: DB 캐시 조회
+        2순위: 실시간 API 호출 (그리고 DB 저장)
+        3순위: 직선 거리 계산
+        """
+        db = SessionLocal()
         
-        # API 실패 또는 경로 없음 시: 직선거리 기반 추정 (백업 로직)
-        dist_m = TransportEngine._haversine(start_lat, start_lng, end_lat, end_lng)
-        # 1km당 2분 + 기본 15분 (교통 체증 고려)
-        return int((dist_m / 1000) * 2) + 15
+        # 1. DB 캐시 확인
+        cache_id = f"{start_name}_{end_name}"
+        cached = db.query(models.TravelTimeCache).filter_by(id=cache_id).first()
+        
+        if cached:
+            db.close()
+            return cached.total_time
+
+        # 2. 캐시 없으면 API 호출
+        print(f"📡 API 호출: {start_name} -> {end_name}")
+        real_time = TransportEngine.get_transit_time(start_lat, start_lng, end_lat, end_lng)
+        
+        # 결과가 유효하면 DB에 저장 (다음 번을 위해)
+        if real_time and real_time < 200: # 200분 미만인 유효값만
+            try:
+                new_cache = models.TravelTimeCache(
+                    id=cache_id, start_name=start_name, end_name=end_name, total_time=real_time
+                )
+                db.add(new_cache)
+                db.commit()
+            except: pass
+        
+        db.close()
+        return real_time
 
     @staticmethod
     def find_best_midpoints(participants: List[Dict]) -> List[Dict]:
