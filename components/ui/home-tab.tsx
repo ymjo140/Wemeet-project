@@ -55,34 +55,10 @@ const AI_PERSONAS = [
 ];
 
 const PURPOSE_FILTERS: Record<string, any> = {
-    "식사": { 
-        label: "🍚 식사", 
-        tabs: { 
-            "MENU": { label: "메뉴", options: ["한식", "양식", "일식", "중식", "고기", "분식", "아시안"] }, 
-            "VIBE": { label: "분위기", options: ["가성비", "혼밥", "깔끔한", "웨이팅맛집", "노포"] } 
-        } 
-    },
-    "술/회식": { 
-        label: "🍺 술/회식", 
-        tabs: { 
-            "TYPE": { label: "주종", options: ["소주", "맥주", "와인", "하이볼", "막걸리"] }, 
-            "VIBE": { label: "분위기", options: ["시끌벅적", "조용한", "힙한", "노포", "룸술집"] } 
-        } 
-    },
-    "카페": { 
-        label: "☕ 카페", 
-        tabs: { 
-            "TYPE": { label: "목적", options: ["수다", "작업", "디저트", "빙수"] }, 
-            "VIBE": { label: "분위기", options: ["감성", "뷰맛집", "대형", "조용한", "루프탑"] } 
-        } 
-    },
-    "데이트/기념일": { 
-        label: "💖 데이트", 
-        tabs: { 
-            "COURSE": { label: "코스", options: ["맛집", "카페", "산책", "액티비티", "전시회"] }, 
-            "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "이색적인", "고급진", "야경"] } 
-        } 
-    }
+    "식사": { label: "🍚 식사", tabs: { "MENU": { label: "메뉴", options: ["한식", "양식", "일식", "중식", "고기"] }, "VIBE": { label: "분위기", options: ["가성비", "조용한", "웨이팅맛집"] } } },
+    "술/회식": { label: "🍺 술/회식", tabs: { "TYPE": { label: "주종", options: ["소주", "맥주", "와인", "하이볼"] }, "VIBE": { label: "분위기", options: ["시끌벅적", "조용한", "룸술집"] } } },
+    "카페": { label: "☕ 카페", tabs: { "TYPE": { label: "목적", options: ["수다", "작업", "디저트"] }, "VIBE": { label: "분위기", options: ["감성", "뷰맛집", "대형"] } } },
+    "데이트/기념일": { label: "💖 데이트", tabs: { "COURSE": { label: "코스", options: ["맛집", "카페", "산책"] }, "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "야경"] } } }
 };
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -119,7 +95,6 @@ export function HomeTab() {
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
-  // 🌟 필터 관련 State
   const [selectedPurpose, setSelectedPurpose] = useState("식사")
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
   const [myProfile, setMyProfile] = useState<any>(null)
@@ -130,8 +105,8 @@ export function HomeTab() {
   const lootMarkersRef = useRef<any[]>([])
   const friendMarkersRef = useRef<any[]>([])
   const myMarkerRef = useRef<any>(null)
-  const polylinesRef = useRef<any[]>([]) // 경로선 관리용 Ref
-  const timeMarkersRef = useRef<any[]>([]) // 🆕 시간 표시 말풍선용 Ref
+  const polylinesRef = useRef<any[]>([]) 
+  const timeMarkersRef = useRef<any[]>([]) 
 
   // --- Helpers ---
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -149,7 +124,7 @@ export function HomeTab() {
   useEffect(() => {
       const fetchMyInfo = async () => {
           const token = localStorage.getItem("token");
-          if (!token) { setMyLocationInput("비회원"); return; }
+          if (!token) { setMyLocationInput("📍 현위치 (비회원)"); return; }
           try {
               const res = await fetchWithAuth("/api/users/me");
               if (res.ok) {
@@ -171,7 +146,7 @@ export function HomeTab() {
       } catch (e) {}
   }
 
-  // GPS 및 위치 기반 이벤트 (생략 없이 복구됨)
+  // GPS
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
@@ -180,7 +155,6 @@ export function HomeTab() {
             const { latitude, longitude } = pos.coords;
             setMyLocation({ lat: latitude, lng: longitude });
             
-            // 근처 추천 장소 확인 (방문 인증용)
             if (currentDisplayRegion?.places?.length > 0) {
                 let foundPlace = null;
                 for (const place of currentDisplayRegion.places) {
@@ -189,8 +163,6 @@ export function HomeTab() {
                 }
                 setNearbyPlace(foundPlace);
             }
-            
-            // 근처 보물 확인 (보물 줍기용)
             if (loots.length > 0) {
                 let foundLoot = null;
                 for (const loot of loots) {
@@ -270,9 +242,8 @@ export function HomeTab() {
     initMap();
   }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe]);
 
-  // 🌟 [경로 그리기 기능 - 실무자]
-  const drawPathsToTarget = (destLat: number, destLng: number, transitInfo: any = null) => {
-    // 1. 기존 선과 말풍선 지우기
+  // 🌟 [핵심] 경로 그리기 함수 (수동 입력 장소 포함 & 비회원 지원)
+  const drawPathsToTarget = async (destLat: number, destLng: number, transitInfo: any = null) => {
     polylinesRef.current.forEach(p => p.setMap(null));
     polylinesRef.current = [];
     timeMarkersRef.current.forEach(m => m.setMap(null));
@@ -283,13 +254,19 @@ export function HomeTab() {
     const destLatLng = new window.naver.maps.LatLng(destLat, destLng);
     const origins: any[] = [];
 
-    // 출발지 목록 구성
-    if (includeMe && myProfile?.location) {
-        origins.push({ 
-            lat: myProfile.location.lat, lng: myProfile.location.lng, 
-            color: '#7C3AED', name: myProfile.name || "나" 
-        });
+    // 1. 내 위치 (비회원이어도 GPS 있으면 포함)
+    if (includeMe) {
+        const lat = myProfile?.location?.lat || myLocation?.lat;
+        const lng = myProfile?.location?.lng || myLocation?.lng;
+        // 비회원이면 '나 (비회원)' 등으로 표시
+        const name = myProfile?.name || "나";
+
+        if (lat && lng) {
+            origins.push({ lat, lng, color: '#7C3AED', name });
+        }
     }
+
+    // 2. 선택된 친구들
     selectedFriends.forEach(f => {
         if(f.location) {
             origins.push({ 
@@ -299,9 +276,36 @@ export function HomeTab() {
         }
     });
 
-    // 그리기 루프
+    // 3. 🌟 수동 입력 장소 (좌표 변환하여 경로에 추가)
+    // 수동 입력값들을 순회하며 좌표를 찾습니다.
+    for (const locName of manualInputs) {
+        if (!locName || locName.trim() === "") continue;
+        try {
+            // API를 통해 텍스트 -> 좌표 변환 (검색 API 활용)
+            const res = await fetch(`${API_URL}/api/places/search?query=${locName}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.length > 0) {
+                    // 첫 번째 검색 결과를 해당 위치로 사용
+                    const topHit = data[0];
+                    origins.push({
+                        lat: topHit.lat,
+                        lng: topHit.lng,
+                        color: '#10B981', // 수동 입력은 초록색
+                        name: locName
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("수동 입력 장소 좌표 찾기 실패:", e);
+        }
+    }
+
+    console.log("📍 경로 그리기 시작. 총 출발지:", origins.length);
+
+    // 4. 지도에 그리기
     origins.forEach(origin => {
-        // A. 경로선(Polyline) 그리기
+        // A. 경로선(Polyline)
         const polyline = new window.naver.maps.Polyline({
             map: mapRef.current,
             path: [new window.naver.maps.LatLng(origin.lat, origin.lng), destLatLng],
@@ -310,15 +314,22 @@ export function HomeTab() {
         });
         polylinesRef.current.push(polyline);
 
-        // B. 시간 정보 찾기
-        let timeText = "?분";
+        // B. 시간 텍스트 계산
+        let timeText = "";
+        // 백엔드 데이터 매칭 시도
         if (transitInfo && transitInfo.details) {
             const detail = transitInfo.details.find((d: any) => d.name === origin.name || (origin.name === "나" && d.name === myProfile?.name));
             if (detail) timeText = `${detail.time}분`;
         }
+        
+        // 데이터 없으면 거리 비례 추산 (도보/차량 혼합 가정)
+        if (!timeText || timeText === "?분") {
+            const dist = calculateDistance(origin.lat, origin.lng, destLat, destLng);
+            // 직선거리 기반 대략적 시간 (1km당 5분 + 기본 10분)
+            timeText = `약 ${Math.ceil(dist/1000 * 5 + 10)}분`;
+        }
 
-        // C. 지도 위 말풍선(Marker with Custom HTML) 추가
-        // 선의 중간 지점에 표시
+        // C. 말풍선 마커 (경로 중간 지점)
         const midLat = (origin.lat + destLat) / 2;
         const midLng = (origin.lng + destLng) / 2;
 
@@ -334,15 +345,18 @@ export function HomeTab() {
                         border-radius: 20px;
                         font-size: 12px;
                         font-weight: bold;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
                         white-space: nowrap;
                         display: flex;
                         align-items: center;
-                        gap: 4px;
-                        z-index: 999;
+                        gap: 6px;
+                        z-index: 9999;
+                        border: 1px solid rgba(255,255,255,0.2);
                     ">
-                        <span style="color: ${origin.color}; font-size: 14px;">●</span>
-                        ${origin.name}에서 ${timeText}
+                        <div style="width: 8px; height: 8px; background-color: ${origin.color}; border-radius: 50%;"></div>
+                        <span>${origin.name}</span>
+                        <span style="opacity: 0.5;">|</span>
+                        <span style="color: #FCD34D;">${timeText}</span>
                     </div>
                 `,
                 anchor: new window.naver.maps.Point(50, 50)
@@ -352,13 +366,13 @@ export function HomeTab() {
     });
   }
 
-  // 🌟 [경로 그리기 기능 - 매니저] (누락 방지)
+  // 매니저 함수
   const drawRegionPaths = (region: any) => {
       if (!region) return;
       drawPathsToTarget(region.lat, region.lng, region.transit_info);
   }
 
-  // 🌟 지역 탭 변경 시 경로 그리기
+  // 탭 변경 감지
   useEffect(() => {
       if (currentDisplayRegion && mapRef.current) {
           drawRegionPaths(currentDisplayRegion);
@@ -373,6 +387,7 @@ export function HomeTab() {
       const usersToSend = participants.map(u => ({
         id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.5665, lng: 126.9780 }, preferences: u.preferences || {}
       }));
+      // 수동 위치는 백엔드에도 보내지만, 프론트에서 시각화할 때도 씁니다.
       const validManualLocs = manualLocs.filter(loc => loc && loc.trim() !== "");
       
       const response = await fetch(`${API_URL}/api/recommend`, {
@@ -380,7 +395,8 @@ export function HomeTab() {
         body: JSON.stringify({
           users: usersToSend, purpose: selectedPurpose, location_name: "중간지점", 
           manual_locations: validManualLocs, user_selected_tags: allTags,
-          current_lat: myProfile?.location?.lat || 37.5665, current_lng: myProfile?.location?.lng || 126.9780
+          current_lat: myProfile?.location?.lat || myLocation?.lat || 37.5665, 
+          current_lng: myProfile?.location?.lng || myLocation?.lng || 126.9780
         })
       })
 
@@ -397,7 +413,11 @@ export function HomeTab() {
   // --- Handlers ---
   const handleMidpointSearch = () => {
       let participants = [...selectedFriends];
-      if (includeMe && myProfile) participants = [myProfile, ...selectedFriends];
+      if (includeMe) {
+          // 비회원이라도 GPS가 있으면 참여자로 포함
+          const me = myProfile || { id: 0, name: "나", location: myLocation, preferences: {} };
+          if (me.location) participants = [me, ...selectedFriends];
+      }
       const hasManualInput = manualInputs.some(txt => txt && txt.trim() !== "");
       if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
       fetchRecommendations(participants, manualInputs);
@@ -412,7 +432,6 @@ export function HomeTab() {
       if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); 
   };
   
-  // 🌟 필터 토글 함수 (복구됨!)
   const toggleFilter = (k: string, v: string) => {
       setSelectedFilters(prev => {
           const list = prev[k] || [];
@@ -438,7 +457,6 @@ export function HomeTab() {
       } catch(e) { alert("오류"); } finally { setInteractionLoading(false); }
   }
   
-  // 🌟 [장소 클릭] 모달 열고 경로 그리기
   const handlePlaceClick = (p: any) => { 
       setSelectedPlace(p); 
       setIsDetailOpen(true);
@@ -484,7 +502,7 @@ export function HomeTab() {
         ) : null}
       </AnimatePresence>
 
-      {/* 출발지 설정 카드 (기본 표시) - 🌟 높이 Fix & 오타 제거 완료 */}
+      {/* 출발지 설정 카드 (기본 표시) */}
       {!recommendations.length && (
           <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
             <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
@@ -517,7 +535,7 @@ export function HomeTab() {
                 <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4"/>
                 <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">추천 지역</h3><button onClick={()=>{setRecommendations([]); setManualInputs([""]);}} className="text-xs text-gray-400">다시 찾기</button></div>
                 
-                {/* 🌟 지역 선택 탭 */}
+                {/* 지역 선택 탭 */}
                 <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
                     {recommendations.map((r, i) => (
                         <button key={i} onClick={()=>{setActiveTabIdx(i); setCurrentDisplayRegion(r);}} 
@@ -526,8 +544,6 @@ export function HomeTab() {
                         </button>
                     ))}
                 </div>
-
-                {/* 🌟 시간 표시는 이제 '지도 위'에 뜹니다! 여기서는 제거됨. */}
 
                 <div className="space-y-3">{currentDisplayRegion?.places?.map((p: any) => <PlaceCard key={p.id} place={p} onClick={()=>handlePlaceClick(p)}/>)}</div>
             </motion.div>
@@ -538,10 +554,13 @@ export function HomeTab() {
       {loading && <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin"/></div>}
       {gpsError && <div className="absolute top-24 left-4 right-4 bg-red-100 text-red-600 p-2 rounded-lg text-xs z-50">{gpsError}</div>}
 
-      {/* 🌟 [복구 완료] 필터 상세 설정 모달 */}
+      {/* 필터 상세 설정 모달 */}
       <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
           <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
-              <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b"><DialogTitle>상세 필터 설정</DialogTitle></DialogHeader>
+              <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b">
+                  <DialogTitle>상세 필터 설정</DialogTitle>
+                  <DialogDescription className="hidden">모임의 목적과 세부 옵션을 설정하세요.</DialogDescription>
+              </DialogHeader>
               
               <div className="px-4 py-3 bg-gray-50 border-b">
                 <div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div>
@@ -584,11 +603,19 @@ export function HomeTab() {
           </DialogContent>
       </Dialog>
       
-      {/* 친구/취향/상세 모달 */}
-      <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}><DialogContent><DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader><div className="space-y-2">{AI_PERSONAS.map(f=><div key={f.id} onClick={()=>toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf=>sf.id===f.id)&&<CheckCircle2 className="ml-auto w-4 h-4 text-purple-600"/>}</div>)}</div></DialogContent></Dialog>
+      {/* 친구/취향 모달 */}
+      <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>친구 추가</DialogTitle>
+                  <DialogDescription className="hidden">함께 만날 친구를 선택하세요.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">{AI_PERSONAS.map(f=><div key={f.id} onClick={()=>toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf=>sf.id===f.id)&&<CheckCircle2 className="ml-auto w-4 h-4 text-purple-600"/>}</div>)}</div>
+          </DialogContent>
+      </Dialog>
       <PreferenceModal isOpen={isPreferenceModalOpen} onClose={()=>setIsPreferenceModalOpen(false)} onComplete={()=>setIsPreferenceModalOpen(false)}/>
       
-      {/* 🌟 상세 모달 (시간 정보 포함) */}
+      {/* 상세 모달 */}
       <Dialog open={isDetailOpen} onOpenChange={(open) => {
           setIsDetailOpen(open);
           if (!open) {
@@ -605,31 +632,13 @@ export function HomeTab() {
                       {selectedPlace?.name} 
                       <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge>
                   </DialogTitle>
+                  <DialogDescription className="hidden">장소 상세 정보입니다.</DialogDescription>
               </DialogHeader>
               
               <div className="flex-1 overflow-y-auto py-2 space-y-4">
-                  {/* 1. 점수 카드 */}
                   <div className="bg-purple-50 p-4 rounded-lg text-center">
                       <div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div>
                       <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div>
-                  </div>
-
-                  {/* 🆕 2. 소요 시간 정보 (상세 모달 내부) */}
-                  <div className="space-y-3">
-                      <h4 className="font-bold text-sm text-gray-700 flex items-center gap-2">🏃‍♂️ 소요 시간 정보</h4>
-                      <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
-                          {currentDisplayRegion?.transit_info?.details?.map((info: any, i: number) => (
-                              <div key={i} className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                      <Avatar className="w-8 h-8 border bg-white"><AvatarFallback className="text-xs">{info.name?.[0]}</AvatarFallback></Avatar>
-                                      <span className="text-sm font-medium">{info.name}</span>
-                                  </div>
-                                  <div className="flex-1 mx-3 border-t-2 border-dotted border-gray-300 h-0" />
-                                  <div className="flex items-center gap-1 text-sm font-bold text-[#7C3AED]"><span>약 {info.time}분</span></div>
-                              </div>
-                          ))}
-                          {!currentDisplayRegion?.transit_info && <div className="text-xs text-gray-400 text-center">이동 시간 정보가 없습니다.</div>}
-                      </div>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -645,7 +654,6 @@ export function HomeTab() {
   )
 }
 
-// 🌟 자동완성 컴포넌트 (Relative + z-index 수정됨)
 function PlaceAutocomplete({ value, onChange, placeholder }: any) {
     const [list, setList] = useState<any[]>([]);
     useEffect(() => {
