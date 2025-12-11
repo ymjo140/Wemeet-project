@@ -54,11 +54,36 @@ const AI_PERSONAS = [
     { id: 4, name: "박감성 (성수)", locationName: "성수역", location: { lat: 37.544581, lng: 127.056035 } },
 ];
 
+// 🌟 필터 데이터 구조
 const PURPOSE_FILTERS: Record<string, any> = {
-    "식사": { label: "🍚 식사", tabs: { "MENU": { label: "메뉴", options: ["한식", "양식", "일식", "중식", "고기"] }, "VIBE": { label: "분위기", options: ["가성비", "조용한", "웨이팅맛집"] } } },
-    "술/회식": { label: "🍺 술/회식", tabs: { "TYPE": { label: "주종", options: ["소주", "맥주", "와인", "하이볼"] }, "VIBE": { label: "분위기", options: ["시끌벅적", "조용한", "룸술집"] } } },
-    "카페": { label: "☕ 카페", tabs: { "TYPE": { label: "목적", options: ["수다", "작업", "디저트"] }, "VIBE": { label: "분위기", options: ["감성", "뷰맛집", "대형"] } } },
-    "데이트/기념일": { label: "💖 데이트", tabs: { "COURSE": { label: "코스", options: ["맛집", "카페", "산책"] }, "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "야경"] } } }
+    "식사": { 
+        label: "🍚 식사", 
+        tabs: { 
+            "MENU": { label: "메뉴", options: ["한식", "양식", "일식", "중식", "고기", "분식", "아시안"] }, 
+            "VIBE": { label: "분위기", options: ["가성비", "혼밥", "깔끔한", "웨이팅맛집", "노포"] } 
+        } 
+    },
+    "술/회식": { 
+        label: "🍺 술/회식", 
+        tabs: { 
+            "TYPE": { label: "주종", options: ["소주", "맥주", "와인", "하이볼", "막걸리"] }, 
+            "VIBE": { label: "분위기", options: ["시끌벅적", "조용한", "힙한", "노포", "룸술집"] } 
+        } 
+    },
+    "카페": { 
+        label: "☕ 카페", 
+        tabs: { 
+            "TYPE": { label: "목적", options: ["수다", "작업", "디저트", "빙수"] }, 
+            "VIBE": { label: "분위기", options: ["감성", "뷰맛집", "대형", "조용한", "루프탑"] } 
+        } 
+    },
+    "데이트/기념일": { 
+        label: "💖 데이트", 
+        tabs: { 
+            "COURSE": { label: "코스", options: ["맛집", "카페", "산책", "액티비티", "전시회"] }, 
+            "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "이색적인", "고급진", "야경"] } 
+        } 
+    }
 };
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
@@ -95,6 +120,7 @@ export function HomeTab() {
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
+  // 🌟 필터 관련 State
   const [selectedPurpose, setSelectedPurpose] = useState("식사")
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
   const [myProfile, setMyProfile] = useState<any>(null)
@@ -145,6 +171,7 @@ export function HomeTab() {
       } catch (e) {}
   }
 
+  // GPS 및 위치 기반 이벤트
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
@@ -270,7 +297,7 @@ export function HomeTab() {
     });
   }
 
-  // 🌟 [경로 그리기 기능 - 매니저] (누락되었던 함수 정의)
+  // 🌟 [경로 그리기 기능 - 매니저] (복구됨!)
   const drawRegionPaths = (region: any) => {
       if (!region) return;
       drawPathsToTarget(region.lat, region.lng);
@@ -329,6 +356,8 @@ export function HomeTab() {
   const toggleFriend = (friend: any) => { 
       if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); 
   };
+  
+  // 🌟 필터 토글 함수 (복구됨!)
   const toggleFilter = (k: string, v: string) => {
       setSelectedFilters(prev => {
           const list = prev[k] || [];
@@ -400,12 +429,12 @@ export function HomeTab() {
         ) : null}
       </AnimatePresence>
 
-      {/* 출발지 설정 카드 (기본 표시) - 🌟 높이 Fix & 오타 제거 */}
+      {/* 출발지 설정 카드 (기본 표시) */}
       {!recommendations.length && (
           <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
             <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
+            {/* 🌟 높이 조절 Fix (max-h-[50vh]) */}
             <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-                {/* 🔄 오타 's' 제거됨 */}
                 {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={()=>setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400"/></button></div>}
                 {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={()=>toggleFriend(f)}><X className="w-4 h-4 text-gray-400"/></button></div>)}
                 {manualInputs.map((val, i) => (
@@ -471,10 +500,55 @@ export function HomeTab() {
       {loading && <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin"/></div>}
       {gpsError && <div className="absolute top-24 left-4 right-4 bg-red-100 text-red-600 p-2 rounded-lg text-xs z-50">{gpsError}</div>}
 
-      {/* 필터/친구 모달 등은 생략 (기존 코드 유지) */}
+      {/* 🌟 [복구 완료] 필터 상세 설정 모달 */}
       <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
-          <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>필터</DialogTitle></DialogHeader><div className="p-4">상세 필터 설정 기능은 준비중입니다.</div></DialogContent>
+          <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
+              <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b"><DialogTitle>상세 필터 설정</DialogTitle></DialogHeader>
+              
+              {/* 상단: 목적 선택 */}
+              <div className="px-4 py-3 bg-gray-50 border-b">
+                <div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div>
+                <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                    {Object.keys(PURPOSE_FILTERS).map((purposeKey) => (
+                        <Button key={purposeKey} variant={selectedPurpose === purposeKey ? "default" : "outline"} className={`rounded-full h-8 text-xs flex-shrink-0 ${selectedPurpose === purposeKey ? "bg-[#7C3AED] text-white" : "text-gray-600"}`} onClick={() => { setSelectedPurpose(purposeKey); setSelectedFilters({ PURPOSE: [purposeKey], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] }); }}>
+                            {PURPOSE_FILTERS[purposeKey].label}
+                        </Button>
+                    ))}
+                </div>
+              </div>
+
+              {/* 하단: 세부 필터 (탭) */}
+              <div className="flex-1 flex flex-col bg-white overflow-hidden">
+                {currentFilters && (
+                    <Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
+                        <div className="px-4 pt-2 border-b">
+                            <TabsList className="w-full grid grid-cols-2 h-auto p-1 bg-gray-100 rounded-lg">
+                                {Object.keys(currentFilters.tabs).map((tabKey) => (
+                                    <TabsTrigger key={tabKey} value={tabKey} className="text-xs py-1.5">{currentFilters.tabs[tabKey].label}</TabsTrigger>
+                                ))}
+                            </TabsList>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {Object.entries(currentFilters.tabs).map(([tabKey, tabData]: any) => (
+                                <TabsContent key={tabKey} value={tabKey} className="mt-0 h-full">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {tabData.options.map((opt: string) => (
+                                            <Button key={opt} variant={selectedFilters[tabKey]?.includes(opt) ? "default" : "outline"} className={`h-auto py-2 px-1 text-xs break-keep ${selectedFilters[tabKey]?.includes(opt) ? "bg-purple-50 text-[#7C3AED] border-[#7C3AED]" : "text-gray-600 border-gray-200"}`} onClick={() => toggleFilter(tabKey, opt)}>
+                                                {opt}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </TabsContent>
+                            ))}
+                        </div>
+                    </Tabs>
+                )}
+              </div>
+              <div className="p-4 border-t bg-white"><Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => setIsFilterOpen(false)}>선택 완료</Button></div>
+          </DialogContent>
       </Dialog>
+      
+      {/* 친구/취향/상세 모달 */}
       <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}><DialogContent><DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader><div className="space-y-2">{AI_PERSONAS.map(f=><div key={f.id} onClick={()=>toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf=>sf.id===f.id)&&<CheckCircle2 className="ml-auto w-4 h-4 text-purple-600"/>}</div>)}</div></DialogContent></Dialog>
       <PreferenceModal isOpen={isPreferenceModalOpen} onClose={()=>setIsPreferenceModalOpen(false)} onComplete={()=>setIsPreferenceModalOpen(false)}/>
       
@@ -503,7 +577,7 @@ export function HomeTab() {
                       <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div>
                   </div>
 
-                  {/* 상세 모달에도 시간 정보 표시 */}
+                  {/* 🆕 2. 소요 시간 정보 */}
                   <div className="space-y-3">
                       <h4 className="font-bold text-sm text-gray-700 flex items-center gap-2">🏃‍♂️ 소요 시간 정보</h4>
                       <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-100">
@@ -517,9 +591,11 @@ export function HomeTab() {
                                   <div className="flex items-center gap-1 text-sm font-bold text-[#7C3AED]"><span>약 {info.time}분</span></div>
                               </div>
                           ))}
+                          {!currentDisplayRegion?.transit_info && <div className="text-xs text-gray-400 text-center">이동 시간 정보가 없습니다.</div>}
                       </div>
                   </div>
 
+                  {/* 3. 태그 정보 */}
                   <div className="flex flex-wrap gap-2">
                       {selectedPlace?.tags?.map((t: string, i: number) => (
                           <Badge key={i} variant="secondary" className="bg-white border border-gray-200 text-gray-500">#{t}</Badge>
