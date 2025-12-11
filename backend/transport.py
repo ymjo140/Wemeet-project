@@ -1,11 +1,15 @@
 import math
 import requests
-import asyncio
 from typing import List, Dict
-from database import SessionLocal # DB 세션 추가
+from sqlalchemy.orm import Session
+from database import SessionLocal
 import models
 
 class TransportEngine:
+    # ODsay API Key (발급받은 키 확인)
+    ODSAY_API_KEY = "ILj4gNSd6U8ZTMlQ52YyxA" # 혹은 os.getenv("ODSAY_API_KEY")
+    ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
+
     # 🌟 [대규모 확장] 서울/경기/인천 주요 거점 및 환승역 좌표 DB
     SEOUL_HOTSPOTS = [
         # --- 1호선 ---
@@ -220,20 +224,38 @@ class TransportEngine:
         {"name": "의정부", "lat": 37.7386, "lng": 127.0460, "lines": [1]}
     ]
 
-    # ODsay API Key
-    ODSAY_API_KEY = "ILj4gNSd6U8ZTMlQ52YyxA"
-    ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
-
+    # 👇 [복구됨] build_cache.py가 호출하는 원본 함수
     @staticmethod
-    def _haversine(lat1, lon1, lat2, lon2):
-        """직선 거리 계산 (API 실패 시 백업용)"""
-        R = 6371
-        dLat = math.radians(lat2 - lat1)
-        dLon = math.radians(lon2 - lon1)
-        a = math.sin(dLat/2) * math.sin(dLat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2) * math.sin(dLon/2)
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c * 1000 # 미터 단위
+    def get_transit_time(start_lat, start_lng, end_lat, end_lng):
+        """ODsay API를 통해 대중교통 소요 시간(분)을 가져옵니다. (최단 경로 기준)"""
+        try:
+            params = {
+                "SX": start_lng, "SY": start_lat,
+                "EX": end_lng, "EY": end_lat,
+                "apiKey": TransportEngine.ODSAY_API_KEY,
+            }
+            # API 호출
+            response = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "result" in data and "path" in data["result"]:
+                    paths = data["result"]["path"]
+                    # 최단 시간 선택
+                    min_time = min(p["info"]["totalTime"] for p in paths)
+                    return min_time
+                    
+        except Exception as e:
+            # 에러 발생 시 로그 찍고 백업 로직으로 넘어감
+            print(f"⚠️ ODsay Error: {e}")
+            pass
+        
+        # API 실패 또는 경로 없음 시: 직선거리 기반 추정 (백업 로직)
+        dist_m = TransportEngine._haversine(start_lat, start_lng, end_lat, end_lng)
+        # 1km당 2분 + 기본 15분 (교통 체증 고려)
+        return int((dist_m / 1000) * 2) + 15
 
+    # 👇 [캐시 로직] meetings.py가 호출하는 함수
     @staticmethod
     def get_transit_time_with_cache(start_name, end_name, start_lat, start_lng, end_lat, end_lng):
         """
@@ -268,40 +290,67 @@ class TransportEngine:
         db.close()
         return real_time
 
+    # 👇 [2명일 때] 시간상 중간 지점 찾기
     @staticmethod
-    def find_best_midpoints(participants: List[Dict]) -> List[Dict]:
-        """모든 참가자의 이동 시간 편차와 총합이 가장 적은 '최적의 중간 지점' TOP 3를 찾습니다."""
-        if not participants: return []
+    def get_time_based_midpoint(sx, sy, ex, ey):
+        try:
+            url = "https://api.odsay.com/v1/api/searchPubTransPathT"
+            params = {
+                "SX": sx, "SY": sy, "EX": ex, "EY": ey,
+                "apiKey": TransportEngine.ODSAY_API_KEY,
+            }
+            # API 호출
+            response = requests.get(url, params=params, timeout=5)
+            if response.status_code != 200: return None
 
-        scored_candidates = []
+            data = response.json()
+            if "result" not in data or "path" not in data["result"]: return None
 
-        for spot in TransportEngine.SEOUL_HOTSPOTS:
-            times = []
-            
-            for p in participants:
-                duration = TransportEngine.get_transit_time(p["lat"], p["lng"], spot["lat"], spot["lng"])
-                times.append(duration)
+            # 1. 최적 경로 (첫 번째 경로) 가져오기
+            best_path = data["result"]["path"][0]
+            total_time = best_path["info"]["totalTime"]
+            target_time = total_time / 2 
 
-            avg_time = sum(times) / len(times)
-            max_time = max(times)
-            min_time = min(times)
-            
-            std_dev = max_time - min_time
-            score = avg_time + (std_dev * 2.0)
+            current_time = 0
+            midpoint_coords = None
 
-            scored_candidates.append({
-                "region_name": spot["name"],
-                "lat": spot["lat"],
-                "lng": spot["lng"],
-                "score": score,
-                "transit_info": {
-                    "avg_time": int(avg_time),
-                    "details": [{"name": participants[i].get("name"), "time": t, "mode": "subway"} for i, t in enumerate(times)]
-                }
-            })
+            # 2. 경로의 세부 구간(subPath)을 순회하며 중간 지점 찾기
+            for sub in best_path["subPath"]:
+                section_time = sub["sectionTime"]
+                
+                # 시간이 누적되어 목표 시간(절반)을 넘어서는 순간의 구간(정류장)을 찾음
+                if current_time + section_time >= target_time:
+                    # 이 구간이 대중교통(지하철/버스)라면 해당 역 좌표 반환
+                    if sub["trafficType"] in [1, 2]: # 1:지하철, 2:버스
+                        # 구간의 시작점(정류장) 좌표 사용
+                        if "startY" in sub and "startX" in sub:
+                            midpoint_coords = (float(sub["startY"]), float(sub["startX"]))
+                            return midpoint_coords
+                    else:
+                        pass 
+                
+                current_time += section_time
+
+            # 반복문에서 못 찾았으면(마지막 도보 등), 경로의 마지막 하차 지점이라도 반환
+            if not midpoint_coords:
+                last_sub = best_path["subPath"][-2] if len(best_path["subPath"]) > 1 else best_path["subPath"][0]
+                if "endY" in last_sub:
+                    return (float(last_sub["endY"]), float(last_sub["endX"]))
+
+        except Exception as e:
+            return None
         
-        scored_candidates.sort(key=lambda x: x["score"])
-        return scored_candidates[:3]
+        return None
+
+    @staticmethod
+    def _haversine(lat1, lon1, lat2, lon2):
+        """직선 거리 계산 (API 실패 시 백업용)"""
+        R = 6371
+        dLat = math.radians(lat2 - lat1)
+        dLon = math.radians(lon2 - lon1)
+        a = math.sin(dLat/2) * math.sin(dLat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2) * math.sin(dLon/2)
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        return R * c * 1000 # 미터 단위
 
     @staticmethod
     def get_nearest_hotspot(lat: float, lng: float) -> str:
