@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON, Enum, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -199,8 +199,8 @@ class Friendship(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"))  # 받은 사람
     status = Column(String, default="pending") # pending(대기), accepted(수락)
     created_at = Column(DateTime, default=datetime.now)
+
 # 1. 💰 코인 내역 (입출금 장부)
-# - 유저가 코인을 얻거나 쓸 때마다 기록됨
 class CoinHistory(Base):
     __tablename__ = "coin_history"
     id = Column(Integer, primary_key=True, index=True)
@@ -211,17 +211,14 @@ class CoinHistory(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 # 2. 📍 방문 기록 (중복 방지용)
-# - 하루에 같은 장소에서 계속 코인을 받는 걸 방지함
 class VisitLog(Base):
     __tablename__ = "visit_logs"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     place_name = Column(String) # 장소 이름 (예: "스타벅스 강남점")
-    # place_id = Column(String) # (선택) 네이버 플레이스 ID 등 고유값
     created_at = Column(DateTime, default=datetime.now)
 
-# 3. 🎁 체험단/이벤트 (사장님 광고) - [아직 미구현된 부분]
-# - 사장님이 "우리 가게 오면 5000코인 드려요!" 하고 올리는 공고
+# 3. 🎁 체험단/이벤트 (사장님 광고)
 class Campaign(Base):
     __tablename__ = "campaigns"
     id = Column(Integer, primary_key=True, index=True)
@@ -243,4 +240,25 @@ class TravelTimeCache(Base):
     start_name = Column(String, index=True)
     end_name = Column(String, index=True)
     total_time = Column(Integer) # 소요 시간(분)
+    created_at = Column(DateTime, default=datetime.now)
+
+# 🌟 [신규] 완료된 모임의 데이터 (AI 학습/추천용)
+class MeetingHistory(Base):
+    __tablename__ = "meeting_histories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # 모임 특성 (Clustering Feature)
+    purpose = Column(String, index=True)  # 예: "식사", "회식"
+    tags = Column(String)     # 예: "조용한,가성비" (JSON string or Comma-separated)
+    participant_count = Column(Integer) # 인원수 (비슷한 규모끼리 묶기 위해)
+    region_name = Column(String) # 예: "강남"
+    
+    # 선택 결과 (Label)
+    place_name = Column(String) # 예: "땀땀 강남점"
+    place_category = Column(String) # 예: "음식점"
+    
+    # 피드백 (가중치용)
+    satisfaction_score = Column(Float, default=4.0) # 1~5점 (기본 4.0)
+    
     created_at = Column(DateTime, default=datetime.now)

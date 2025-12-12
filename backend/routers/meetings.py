@@ -23,6 +23,7 @@ from constants import (
 )
 from transport import TransportEngine
 
+# Gemini 설정
 genai.configure(api_key=GEMINI_API_KEY)
 data_provider = RealDataProvider(NAVER_SEARCH_ID, NAVER_SEARCH_SECRET, NAVER_MAP_ID, NAVER_MAP_SECRET)
 
@@ -109,9 +110,8 @@ FALLBACK_COORDINATES = {
     "광흥창": (37.5474, 126.9324), "대흥": (37.5477, 126.9420), "효창공원앞": (37.5392, 126.9613),
     "삼각지": (37.5347, 126.9731), "녹사평": (37.5346, 126.9866), "이태원": (37.5345, 126.9943),
     "한강진": (37.5396, 127.0017), "한남(오거리)": (37.5340, 127.0060), "버티고개": (37.5480, 127.0070),
-    "약수": (37.5543, 127.0107), "신당": (37.5656, 127.0196), "동묘앞": (37.5732, 127.0165),
-    "보문": (37.5852, 127.0193), "안암": (37.5863, 127.0292), "고려대": (37.5905, 127.0358),
-    "석계": (37.6148, 127.0656), "태릉입구": (37.6179, 127.0751), "응암": (37.5986, 126.9155),
+    "동묘앞": (37.5732, 127.0165), "보문": (37.5852, 127.0193), "안암": (37.5863, 127.0292),
+    "고려대": (37.5905, 127.0358), "태릉입구": (37.6179, 127.0751), "응암": (37.5986, 126.9155),
     "역촌": (37.6060, 126.9227), "불광": (37.6104, 126.9298), "독바위": (37.6184, 126.9330),
     "구산": (37.6113, 126.9171), "새절": (37.5911, 126.9136), "증산": (37.5838, 126.9096),
     "디지털미디어시티": (37.5774, 126.8995), "월드컵경기장": (37.5695, 126.8990),
@@ -185,41 +185,137 @@ def find_nearest_hotspot_local(lat: float, lng: float):
             best_place = name
     return best_place
 
-# 🌟 [2] N명 최적화 로직 (DB 캐시 활용 - 인원수 관계없이 통합)
+# 🌟 [디버깅] ODsay API 호출 함수
+def get_transit_time(sx, sy, ex, ey):
+    if not ODSAY_API_KEY:
+        print("❌ [ODsay] API Key Missing!")
+        return None
+
+    try:
+        url = "https://api.odsay.com/v1/api/searchPubTransPathT"
+        params = { "SX": sx, "SY": sy, "EX": ex, "EY": ey, "apiKey": ODSAY_API_KEY }
+        headers = { "Referer": "http://127.0.0.1" }
+        res = requests.get(url, params=params, headers=headers, timeout=5)
+        
+        if res.status_code == 200:
+            data = res.json()
+            if "result" in data and "path" in data["result"]:
+                return data["result"]["path"][0]["info"]["totalTime"]
+            return None
+        return None
+    except Exception as e:
+        return None
+
+# 🌟 [1] Top 3 중간 지점 찾기 (2명일 땐 시간 중간점, 3명 이상은 무게중심 + 시간 편차)
+def find_top_3_midpoints_odsay(participants, default_lat, default_lng):
+    print(f"🔍 [Midpoint] Participants: {len(participants)}")
+    
+    if not participants:
+        return [("내 주변", default_lat, default_lng)]
+
+    # 🎯 [신규 로직] 참여자가 2명일 때 -> '시간상 중간 지점' 알고리즘 가동
+    if len(participants) == 2:
+        p1, p2 = participants[0], participants[1]
+        print("🚀 2인 모드: 시간 기반 정밀 중간 지점 탐색 시작...")
+        
+        # 1. 실제 경로의 중간 좌표 가져오기
+        time_mid_coords = TransportEngine.get_time_based_midpoint(p1['lng'], p1['lat'], p2['lng'], p2['lat'])
+        
+        # 2. 찾았다면 그 좌표를 기준으로 가장 가까운 핫스팟 3개 선정
+        if time_mid_coords:
+            mid_lat, mid_lng = time_mid_coords
+            print(f"✅ 시간 중간 좌표: {mid_lat}, {mid_lng}")
+            
+            # 핫스팟들과 거리 계산
+            candidates = []
+            for name, coords in FALLBACK_COORDINATES.items():
+                dist = (coords[0] - mid_lat)**2 + (coords[1] - mid_lng)**2
+                candidates.append((dist, name, coords))
+            
+            candidates.sort(key=lambda x: x[0])
+            top_3 = [(c[1], c[2][0], c[2][1]) for c in candidates[:3]]
+            print(f"🏆 시간 기반 추천 지역: {top_3}")
+            return top_3
+
+    avg_lat = sum(p['lat'] for p in participants) / len(participants)
+    avg_lng = sum(p['lng'] for p in participants) / len(participants)
+    print(f"📍 Geometric Center: {avg_lat}, {avg_lng}")
+
+    candidates = []
+    for name, coords in FALLBACK_COORDINATES.items():
+        dist = (coords[0] - avg_lat)**2 + (coords[1] - avg_lng)**2
+        candidates.append((dist, name, coords))
+    
+    candidates.sort(key=lambda x: x[0])
+    top_candidates = candidates[:10]
+
+    scored_candidates = []
+    for _, name, coords in top_candidates:
+        max_time = 0
+        valid_cnt = 0
+        
+        for p in participants:
+            time_mins = get_transit_time(p['lng'], p['lat'], coords[1], coords[0])
+            if time_mins is not None:
+                if time_mins > max_time: max_time = time_mins
+                valid_cnt += 1
+            else:
+                dist = ((p['lat']-coords[0])**2 + (p['lng']-coords[1])**2)**0.5
+                estimated_time = 30 + (dist * 1500) 
+                if estimated_time > max_time: max_time = estimated_time
+
+        final_score = max_time - (valid_cnt * 10)
+        scored_candidates.append((final_score, name, coords))
+
+    scored_candidates.sort(key=lambda x: x[0])
+    
+    final_regions = []
+    for i in range(min(2, len(scored_candidates))):
+        c = scored_candidates[i]
+        final_regions.append((c[1], c[2][0], c[2][1]))
+
+    geo_name = top_candidates[0][1] 
+    existing_names = [r[0] for r in final_regions]
+    
+    if geo_name not in existing_names:
+        coords = FALLBACK_COORDINATES.get(geo_name)
+        if coords: final_regions.append((geo_name, coords[0], coords[1]))
+    elif len(scored_candidates) > 2:
+        c = scored_candidates[2]
+        final_regions.append((c[1], c[2][0], c[2][1]))
+
+    print(f"🏆 Final Regions: {final_regions}")
+    return final_regions
+
+# 🌟 [2] N명 최적화 로직 (DB 캐시 활용)
 def find_best_place_for_group(participants):
     """
     N명의 참여자를 위한 최적의 장소 추천 (DB 캐시 활용)
     """
-    # 1. 각 참여자의 '가까운 역' 매핑
     mapped_users = []
     for p in participants:
         nearest_station = TransportEngine.get_nearest_hotspot(p['lat'], p['lng'])
         mapped_users.append({
             "user_id": p.get("id"),
             "name": p.get("name", "User"),
-            "start_station": nearest_station, # 예: "강남"
+            "start_station": nearest_station,
             "lat": p['lat'], "lng": p['lng']
         })
 
     candidates = []
-    # 2. 모든 후보지(SEOUL_HOTSPOTS)에 대해 점수 계산
     for target in TransportEngine.SEOUL_HOTSPOTS:
         target_name = target['name']
         times = []
         
         for u in mapped_users:
-            # DB 캐시를 통해 시간 조회 (초고속)
             t = TransportEngine.get_transit_time_with_cache(
                 u['start_station'], target_name, 
                 u['lat'], u['lng'], target['lat'], target['lng']
             )
             times.append(t)
         
-        # 3. 점수 산출 (총 시간 + 표준편차)
         avg_time = sum(times) / len(times)
         variation = max(times) - min(times)
-        
-        # 편차가 적을수록(공평), 시간이 짧을수록 좋음
         score = avg_time + (variation * 1.5) 
         
         candidates.append({
@@ -229,7 +325,6 @@ def find_best_place_for_group(participants):
             "transit_info": { "details": [{"name": p.get('name', 'User'), "time": t} for p, t in zip(participants, times)] }
         })
 
-    # 4. 정렬 후 상위 3개 반환
     candidates.sort(key=lambda x: x["score"])
     return candidates[:3]
 
@@ -258,7 +353,6 @@ def save_place_to_db(db: Session, poi_list: List[Any], center_lat: float, center
             p_lng = float(p.location[1])
         except: continue
 
-        # 🌟 거리 검증: 중심점으로부터 1km 이상 떨어진 곳은 저장 안 함
         dist = ((p_lat - center_lat)**2 + (p_lng - center_lng)**2)**0.5
         if dist > 0.01: continue
 
@@ -281,7 +375,6 @@ def search_places_in_db(db: Session, region_name: str, keywords: List[str], allo
     if lat == 0.0: lat, lng = get_fuzzy_coordinate(region_name)
     if lat == 0.0: return []
 
-    # 🌟 [수정] 거리 제한 (약 1km)
     lat_min, lat_max = lat - 0.01, lat + 0.01
     lng_min, lng_max = lng - 0.01, lng + 0.01
 
@@ -342,7 +435,6 @@ def compute_availability_slots(user_ids: List[int], days_to_check: int, db: Sess
         curr_date += timedelta(days=1)
     return avail
 
-# 🌟 MeetingFlowEngine 클래스 정의 (반드시 Endpoint 앞에 위치)
 class MeetingFlowEngine:
     def __init__(self, provider: RealDataProvider): self.provider = provider
     def _rank_time_slots(self, slots: List[str], purpose: str) -> List[str]:
@@ -380,10 +472,16 @@ class MeetingFlowEngine:
         regions = []
         if len(part_dicts) > 1:
             try:
-                # 🌟 [수정됨] 무조건 find_best_place_for_group 사용 (캐시 기반)
-                top_regions_cached = find_best_place_for_group(part_dicts)
-                for r in top_regions_cached:
-                    regions.append(r)
+                if len(part_dicts) == 2:
+                    avg_lat = sum(p['lat'] for p in part_dicts) / len(part_dicts)
+                    avg_lng = sum(p['lng'] for p in part_dicts) / len(part_dicts)
+                    top_regions = find_top_3_midpoints_odsay(part_dicts, avg_lat, avg_lng)
+                    for name, lat, lng in top_regions:
+                        regions.append({"region_name": name, "lat": lat, "lng": lng})
+                else:
+                    top_regions_cached = find_best_place_for_group(part_dicts)
+                    for r in top_regions_cached:
+                        regions.append(r)
             except Exception as e: 
                 print(f"🔥 플래너 중간지점 오류: {e}")
                 pass
@@ -497,6 +595,10 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
 
     # 5. 장소 추천 및 응답 구성
     final_response = []
+    
+    # 🌟 클러스터 엔진 초기화
+    cluster_engine = agora_algo.GroupClusterEngine(db)
+
     for region in regions:
         try:
             r_name = region.get('region_name', '중간지점').split('(')[0].strip()
@@ -514,22 +616,63 @@ def run_group_recommendation(req: RecommendRequest, db: Session):
                     if p.name not in existing_names and dist < 0.03: 
                         pois.append(p)
 
+            # 🌟 거리 필터링 (1km)
             valid_pois = []
             for p in pois:
                 dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
                 if dist < 0.02: valid_pois.append(p)
 
+            # --- A. 기본 추천 (개인 취향 기반) ---
             algo_users = [agora_algo.UserProfile(id=p.get('id',0), preferences=p.get('preferences', {}), history=[]) for p in participants]
             engine = agora_algo.AdvancedRecommender(algo_users, valid_pois)
             results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_selected_tags)
+            basic_places = [{"id": p.id, "name": p.name, "category": p.category, "score": max(0.1, round(float(s), 1)), "tags": p.tags, "location": [p.location[0], p.location[1]]} for p, s in results[:10]]
+
+            # --- B. 유사 그룹 추천 (Collaborative Filtering) ---
+            similar_group_recs = cluster_engine.recommend_by_similar_groups(
+                purpose=req.purpose,
+                current_tags=req.user_selected_tags,
+                participant_count=len(participants),
+                region_name=r_name
+            )
             
-            formatted_places = [{"id": p.id, "name": p.name, "category": p.category, "score": max(0.1, round(float(s), 1)), "tags": p.tags, "location": [p.location[0], p.location[1]]} for p, s in results[:10]]
+            # --- C. 중복 제거 및 포맷팅 ---
+            existing_names = {p['name'] for p in basic_places}
+            similar_places_formatted = []
             
+            for sp in similar_group_recs:
+                if sp['name'] not in existing_names:
+                    # DB에서 상세 정보 조회 (없으면 약식으로 생성)
+                    place_info = db.query(models.Place).filter(models.Place.name == sp['name']).first()
+                    if place_info:
+                        similar_places_formatted.append({
+                            "id": place_info.id,
+                            "name": place_info.name,
+                            "category": place_info.category,
+                            "score": round(sp['score'] * 2, 1), # 점수 보정
+                            "tags": place_info.tags,
+                            "location": [place_info.lat, place_info.lng],
+                            "badge": "🔥유사그룹 PICK"
+                        })
+                    else:
+                        # 정보가 없으면 대략적인 정보로 추가
+                        similar_places_formatted.append({
+                            "id": f"sim_{sp['name']}",
+                            "name": sp['name'],
+                            "category": "추천 장소",
+                            "score": round(sp['score'] * 2, 1),
+                            "tags": ["유사모임추천"],
+                            "location": [region["lat"], region["lng"]],
+                            "badge": "🔥유사그룹 PICK"
+                        })
+
+            # --- D. 최종 응답 구조 생성 (기본 + 유사 추천 분리) ---
             region_data = { 
                 "region_name": region['region_name'], 
                 "lat": region["lat"], 
                 "lng": region["lng"], 
-                "places": formatted_places 
+                "places": basic_places, # 기본 추천 리스트
+                "similar_group_places": similar_places_formatted # 유사 그룹 추천 리스트 (중복 제거됨)
             }
             if "transit_info" in region:
                 region_data["transit_info"] = region["transit_info"]

@@ -9,8 +9,8 @@ from transport import TransportEngine
 # 테이블이 없으면 생성
 models.Base.metadata.create_all(bind=engine)
 
-# 🌟 하루 안전 제한 설정 (ODsay 무료가 1000회라면 900회에서 컷)
-DAILY_LIMIT = 900 
+# 🌟 하루 안전 제한 설정 (ODsay 무료가 1000회라면 5000회에서 컷)
+DAILY_LIMIT = 40000 
 
 def build_time_matrix():
     db = SessionLocal()

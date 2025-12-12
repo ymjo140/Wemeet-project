@@ -1,6 +1,9 @@
 import numpy as np
 from typing import List, Dict, Any
 from dataclasses import dataclass
+from sqlalchemy.orm import Session
+from models import MeetingHistory
+import json
 
 @dataclass
 class POI:
@@ -110,3 +113,77 @@ class AdvancedRecommender:
         # 점수 내림차순 정렬
         scored_places.sort(key=lambda x: x[1], reverse=True)
         return scored_places
+class GroupClusterEngine:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def _calculate_similarity(self, target_tags: list, history_tags: list, target_count: int, history_count: int):
+        """
+        유사도 점수 계산 (0.0 ~ 1.0)
+        1. 태그 유사도 (자카드): 공통 태그 / 전체 태그
+        2. 인원 유사도: 인원수가 비슷할수록 높은 점수
+        """
+        # 1. 태그 유사도 (가중치 70%)
+        set_a = set(target_tags)
+        set_b = set(history_tags)
+        if not set_a or not set_b:
+            tag_score = 0
+        else:
+            intersection = len(set_a & set_b)
+            union = len(set_a | set_b)
+            tag_score = intersection / union
+
+        # 2. 인원 유사도 (가중치 30%) -> 인원 차이가 적을수록 1에 가까움
+        size_diff = abs(target_count - history_count)
+        size_score = 1 / (1 + size_diff * 0.5) 
+
+        return (tag_score * 0.7) + (size_score * 0.3)
+
+    def recommend_by_similar_groups(self, purpose: str, current_tags: list, participant_count: int, region_name: str):
+        """
+        현재 모임과 가장 유사한 과거 모임들이 선택한 장소 Top 5 반환
+        """
+        # 1. 같은 목적, 같은 지역의 기록만 1차 필터링
+        candidates = self.db.query(MeetingHistory).filter(
+            MeetingHistory.purpose == purpose,
+            MeetingHistory.selected_region.contains(region_name) # "강남" 포함
+        ).all()
+
+        if not candidates:
+            return []
+
+        scored_places = []
+
+        # 2. 유사도 계산
+        for history in candidates:
+            try:
+                # DB에 저장된 태그가 문자열이라면 리스트로 변환
+                h_tags = history.tags.split(",") if history.tags else []
+                
+                similarity = self._calculate_similarity(
+                    current_tags, h_tags, participant_count, history.participant_count
+                )
+
+                # 유사도가 0.3 이상인(어느정도 비슷한) 경우만 반영
+                if similarity > 0.3:
+                    # 점수 = 유사도 * 만족도(가중치)
+                    final_score = similarity * history.satisfaction_score
+                    scored_places.append({
+                        "name": history.selected_place_name,
+                        "score": final_score,
+                        "reason": f"유사한 '{history.tags}' 성향 그룹이 선택함"
+                    })
+            except: continue
+
+        # 3. 점수순 정렬
+        scored_places.sort(key=lambda x: x["score"], reverse=True)
+        
+        # 중복 제거 (상위권만 남김)
+        seen = set()
+        unique_places = []
+        for p in scored_places:
+            if p["name"] not in seen:
+                seen.add(p["name"])
+                unique_places.append(p)
+
+        return unique_places[:5]
