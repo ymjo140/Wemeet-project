@@ -524,8 +524,7 @@ class MeetingFlowEngine:
             final_tags = list(set(req.user_tags + aggregated_tags))
             
             # (5) 장소 검색 (중간 지점 근처 + 취향 반영)
-            # 여기서는 DB 검색을 우선하고, 없으면 Fallback을 사용합니다.
-            region_name = "중간지점" # API 검색을 위한 더미 이름
+            region_name = "중간지점" 
             
             # DB에서 검색
             lat_min, lat_max = center_lat - 0.02, center_lat + 0.02
@@ -537,6 +536,29 @@ class MeetingFlowEngine:
                 models.Place.category == req.purpose
             ).all()
             
+            # 🚨 [FIX] DB에 장소가 부족하면 외부 API 호출 (Real Data Provider)
+            if len(places) < 3:
+                search_keywords = [f"{req.purpose} 맛집"]
+                for t in final_tags[:2]:
+                    search_keywords.append(f"{t} 맛집")
+                
+                # API 호출
+                api_pois = self.provider.search_places_all_queries(
+                    search_keywords, 
+                    "중간지점", 
+                    center_lat, 
+                    center_lng
+                )
+                
+                # DB 저장
+                save_place_to_db(db, api_pois, center_lat, center_lng)
+                
+                # 다시 조회
+                places = db.query(models.Place).filter(
+                    models.Place.lat.between(lat_min, lat_max),
+                    models.Place.lng.between(lng_min, lng_max)
+                ).all()
+
             # 추천 장소 선정 (태그 매칭 점수)
             scored_places = []
             for p in places:
@@ -587,6 +609,7 @@ class MeetingFlowEngine:
                 for idx, loc_name in enumerate(req.manual_locations):
                     if loc_name.strip():
                         lat, lng = data_provider.get_coordinates(loc_name)
+                        if lat == 0.0: lat, lng = get_fuzzy_coordinate(loc_name)
                         if lat != 0.0: part_dicts.append({"id": 9000+idx, "name": loc_name, "lat": lat, "lng": lng, "preferences": {}})
 
             regions = []

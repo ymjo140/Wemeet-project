@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock, ThumbsUp } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -42,7 +42,113 @@ const formatDate = (dateStr: string) => {
     return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
 };
 
-// 🌟 AI 모임 매니저 컴포넌트
+// 🌟 [핵심] 투표 및 확정 카드 컴포넌트
+const VoteCard = ({ data, messageId, roomId, onConfirm }: { data: any, messageId: number, roomId: string, onConfirm: () => void }) => {
+    const [votes, setVotes] = useState(data.vote_count || 0);
+    const [voted, setVoted] = useState(false);
+    const [confirmLoading, setConfirmLoading] = useState(false);
+
+    // 투표 API 호출
+    const handleVote = async () => {
+        if (voted) return; 
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_URL}/api/meeting-flow/vote`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    ...(token && { "Authorization": `Bearer ${token}` })
+                },
+                body: JSON.stringify({
+                    room_id: Number(roomId),
+                    message_id: messageId 
+                })
+            });
+            
+            if (res.ok) {
+                setVotes(votes + 1);
+                setVoted(true);
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    // 확정 API 호출
+    const handleConfirm = async () => {
+        if (!confirm(`'${data.place.name}'으로 약속을 확정하시겠습니까?\n참여자 전원의 캘린더에 일정이 등록됩니다.`)) return;
+        
+        setConfirmLoading(true);
+        try {
+            const token = localStorage.getItem("token");
+            await fetch(`${API_URL}/api/meeting-flow/confirm`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    ...(token && { "Authorization": `Bearer ${token}` })
+                },
+                body: JSON.stringify({
+                    room_id: Number(roomId),
+                    place_name: data.place.name,
+                    date: data.date || "2023-12-25", 
+                    time: data.time || "19:00",     
+                    category: data.place.category
+                })
+            });
+            onConfirm(); 
+        } catch (e) {
+            alert("확정 처리 중 오류가 발생했습니다.");
+        } finally {
+            setConfirmLoading(false);
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-xl p-4 border shadow-md max-w-[90%] space-y-3">
+            <div className="flex justify-between items-start">
+                <div>
+                    <div className="font-bold text-xs text-[#7C3AED] mb-1 flex items-center gap-1">
+                        <MapPin className="w-3 h-3"/> AI 추천 장소
+                    </div>
+                    <div className="font-bold text-lg text-gray-900 leading-tight">{data.place?.name}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{data.place?.category}</div>
+                </div>
+                <div className="bg-gray-100 px-2 py-1 rounded text-xs font-bold text-gray-600">
+                    {votes}표
+                </div>
+            </div>
+
+            <div className="flex gap-1 flex-wrap">
+                {data.place?.tags?.map((t: string, i: number) => (
+                    <span key={i} className="bg-purple-50 text-purple-600 text-[10px] px-2 py-1 rounded-full border border-purple-100">#{t}</span>
+                ))}
+            </div>
+
+            <div className="bg-indigo-50 p-3 rounded-lg text-xs text-indigo-800 whitespace-pre-line leading-relaxed border border-indigo-100">
+                {data.recommendation_reason}
+            </div>
+
+            <div className="flex gap-2 pt-1 border-t border-gray-100 mt-2">
+                <Button 
+                    variant="outline" 
+                    size="sm"
+                    className={`flex-1 h-9 text-xs ${voted ? "bg-purple-50 text-purple-700 border-purple-200" : "hover:bg-gray-50"}`}
+                    onClick={handleVote}
+                >
+                    <ThumbsUp className="w-3 h-3 mr-1.5"/> {voted ? "투표완료" : "좋아요"}
+                </Button>
+                <Button 
+                    size="sm"
+                    className="flex-1 h-9 text-xs bg-[#7C3AED] hover:bg-[#6D28D9] text-white shadow-sm"
+                    onClick={handleConfirm}
+                    disabled={confirmLoading}
+                >
+                    {confirmLoading ? <Loader2 className="w-3 h-3 animate-spin"/> : <><Check className="w-3 h-3 mr-1.5"/> 약속 확정</>}
+                </Button>
+            </div>
+        </div>
+    )
+}
+
+// 🌟 AI 모임 매니저 (설정 패널)
 const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, myId: number | null, onClose: () => void, onRefresh: () => void }) => {
     const [activeTab, setActiveTab] = useState("recommend") // recommend | schedule
     
@@ -93,9 +199,9 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
         try {
             const token = localStorage.getItem("token");
             
-            // 선택된 날짜가 있으면 그 날짜로, 없으면 'today'
-            const targetDate = selectedDateSlot ? selectedDateSlot.fullDate : "today";
-            const targetTime = selectedDateSlot ? selectedDateSlot.time : "19:00";
+            // 선택된 날짜가 있으면 그 날짜로, 없으면 'auto'
+            const targetDate = selectedDateSlot ? selectedDateSlot.fullDate : "auto";
+            const targetTime = selectedDateSlot ? selectedDateSlot.time : "auto";
 
             const detailedPrompt = `
                 1. 기본 조건: ${selectedPurpose} 목적, ${budget[0]}~${budget[1]}만원 예산.
@@ -126,7 +232,6 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             })
 
             if(res.ok) {
-                // 🌟 [수정됨] alert 제거하고 즉시 새로고침
                 onRefresh(); 
                 onClose();
             } else {
@@ -177,14 +282,13 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             });
 
             if(res.ok) {
-                // 채팅방 알림 전송
+                // 채팅방에도 알림 메시지 보내기
                 await fetch(`${API_URL}/api/chat/message`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
                     body: JSON.stringify({ room_id: Number(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
                 });
                 
-                // 🌟 [수정됨] alert 제거하고 즉시 새로고침
                 onRefresh();
                 onClose();
             }
@@ -214,7 +318,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 {/* --- 탭 1: 장소 추천 --- */}
                 <TabsContent value="recommend" className="space-y-5">
                     
-                    {/* 🌟 [수정됨] 날짜 추천 섹션 (캘린더 분석 결과 표시) */}
+                    {/* 날짜 추천 섹션 */}
                     <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
                         <div className="flex justify-between items-center mb-2">
                             <label className="text-xs font-bold text-indigo-800 flex items-center gap-1">
@@ -358,25 +462,6 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                     )}
                 </TabsContent>
             </Tabs>
-        </div>
-    )
-}
-
-const VoteCard = ({ data }: { data: any }) => {
-    return (
-        <div className="bg-white rounded-xl p-3 border shadow-sm max-w-[90%]">
-            <div className="font-bold text-sm text-[#2dd4bf] mb-1">📍 장소 추천</div>
-            <div className="font-bold text-gray-800">{data.place?.name}</div>
-            <div className="text-xs text-gray-500 mb-2">{data.place?.category}</div>
-            <div className="flex gap-1 mb-2 flex-wrap">
-                {data.place?.tags?.map((t: string, i: number) => <span key={i} className="bg-gray-100 text-[10px] px-1 rounded text-gray-500">#{t}</span>)}
-            </div>
-            {data.recommendation_reason && (
-                <div className="bg-teal-50 p-2 rounded-lg text-[10px] text-teal-700 mb-2 whitespace-pre-line">
-                    {data.recommendation_reason}
-                </div>
-            )}
-            <Button className="w-full h-8 text-xs bg-teal-50 text-teal-600 hover:bg-teal-100 font-bold border border-teal-100">👍 투표하기 ({data.vote_count || 0})</Button>
         </div>
     )
 }
@@ -567,15 +652,21 @@ export function ChatTab() {
                         let content = null
                         try {
                             const jsonContent = JSON.parse(msg.content)
-                            if (jsonContent.type === "vote_card") content = <VoteCard data={jsonContent} />
-                            else content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>
+                            // 🌟 [핵심] 투표 카드 렌더링 (messageId와 onRefresh 전달)
+                            if (jsonContent.type === "vote_card") {
+                                content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onConfirm={fetchMessages} />
+                            } else if (jsonContent.text) {
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>
+                            } else {
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>
+                            }
                         } catch {
-                            content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`}>{msg.content}</div>
+                            content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>
                         }
                         return (
                             <div key={i} className={`flex gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                 {!isMe && <Avatar className="w-8 h-8 border border-white shadow-sm"><AvatarFallback className="text-[10px] bg-gray-100">{msg.name?.[0]}</AvatarFallback></Avatar>}
-                                <div className="max-w-[75%] flex flex-col">
+                                <div className="max-w-[85%] flex flex-col">
                                     {!isMe && <div className="text-[10px] text-gray-500 mb-1 ml-1">{msg.name}</div>}
                                     {content}
                                     <div className={`text-[9px] text-gray-300 mt-1 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{msg.timestamp}</div>
