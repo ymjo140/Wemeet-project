@@ -146,7 +146,7 @@ class GroupClusterEngine:
         # 1. 같은 목적, 같은 지역의 기록만 1차 필터링
         candidates = self.db.query(MeetingHistory).filter(
             MeetingHistory.purpose == purpose,
-            MeetingHistory.selected_region.contains(region_name) # "강남" 포함
+            MeetingHistory.region_name.contains(region_name) # "강남" 포함
         ).all()
 
         if not candidates:

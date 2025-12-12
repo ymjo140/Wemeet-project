@@ -263,6 +263,8 @@ class TransportEngine:
         2순위: 실시간 API 호출 (그리고 DB 저장)
         3순위: 직선 거리 계산
         """
+        if start_name == end_name:
+            return 0
         db = SessionLocal()
         
         # 1. DB 캐시 확인
