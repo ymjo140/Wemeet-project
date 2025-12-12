@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 
 const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+const WS_URL = "wss://wemeet-backend-xqlo.onrender.com";
 
 // --- AI 장소 추천용 필터 데이터 ---
 const AI_FILTER_OPTIONS: Record<string, any> = {
@@ -34,7 +35,7 @@ const AI_FILTER_OPTIONS: Record<string, any> = {
     }
 };
 
-// 🌟 [핵심] AI 모임 매니저 컴포넌트 (장소 추천 + 일정 등록 통합)
+// 🌟 AI 모임 매니저 컴포넌트 (장소 추천 + 일정 등록 통합)
 const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: number | null, onClose: () => void }) => {
     const [activeTab, setActiveTab] = useState("recommend") // recommend | schedule
     
@@ -140,7 +141,7 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
 
             if(res.ok) {
                 alert("📅 일정이 캘린더에 등록되었습니다!");
-                // 채팅방에도 알림 메시지 보내기 (선택사항)
+                // 채팅방에도 알림 메시지 보내기 (API 호출)
                 await fetch(`${API_URL}/api/chat/message`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
@@ -164,7 +165,6 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
                 <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
             </div>
 
-            {/* 🌟 탭 분리: 장소 추천 vs 일정 등록 */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-2 mb-4">
                     <TabsTrigger value="recommend">📍 장소 추천</TabsTrigger>
@@ -307,6 +307,7 @@ export function ChatTab() {
     const [myId, setMyId] = useState<number | null>(null)
     const [showPlanner, setShowPlanner] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
+    const socketRef = useRef<WebSocket | null>(null)
 
     useEffect(() => {
         const init = async () => {
@@ -335,26 +336,45 @@ export function ChatTab() {
         } catch(e) {}
     }
 
+    // 🌟 WebSocket 연결 및 실시간 수신
     useEffect(() => {
-        let interval: NodeJS.Timeout
         if (view === 'room' && activeRoom) {
             setShowPlanner(false)
-            fetchMessages()
-            interval = setInterval(fetchMessages, 3000)
-        }
-        return () => clearInterval(interval)
-    }, [view, activeRoom])
+            
+            // 1. 기존 메시지 로드 (HTTP)
+            const fetchInitialMessages = async () => {
+                const token = localStorage.getItem("token");
+                try {
+                    const res = await fetch(`${API_URL}/api/chat/${activeRoom.id}/messages`, {
+                        headers: token ? { "Authorization": `Bearer ${token}` } : {}
+                    });
+                    if (res.ok) setMessages(await res.json());
+                } catch(e) {}
+            };
+            fetchInitialMessages();
 
-    const fetchMessages = async () => {
-        if (!activeRoom) return
-        try {
+            // 2. WebSocket 연결
             const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/chat/${activeRoom.id}/messages`, {
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            })
-            if (res.ok) setMessages(await res.json())
-        } catch(e) {}
-    }
+            const wsUrl = `${WS_URL}/api/ws/${activeRoom.id}?token=${token}`;
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => console.log("🔌 Connected to Chat Room");
+            
+            ws.onmessage = (event) => {
+                const newMsg = JSON.parse(event.data);
+                setMessages(prev => [...prev, newMsg]);
+                // 스크롤 아래로
+                setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
+            };
+
+            ws.onclose = () => console.log("🔌 Disconnected");
+            socketRef.current = ws;
+
+            return () => {
+                if (ws.readyState === 1) ws.close();
+            };
+        }
+    }, [view, activeRoom])
 
     const handleLeaveRoom = async () => {
         if (!activeRoom) return;
@@ -378,20 +398,11 @@ export function ChatTab() {
     };
 
     const handleSend = async () => {
-        if (!input.trim() || !activeRoom) return
-        try {
-            const token = localStorage.getItem("token");
-            await fetch(`${API_URL}/api/chat/message`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json", 
-                    ...(token && { "Authorization": `Bearer ${token}` }) 
-                },
-                body: JSON.stringify({ room_id: activeRoom.id, content: input, type: "text" })
-            })
-            setInput("")
-            fetchMessages()
-        } catch (e) { console.error(e) }
+        if (!input.trim() || !activeRoom || !socketRef.current) return
+        
+        // WebSocket으로 전송
+        socketRef.current.send(input);
+        setInput("");
     }
 
     if (view === 'list') {
@@ -424,7 +435,7 @@ export function ChatTab() {
                     <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <div>
                         <h2 className="font-bold text-sm text-gray-900 truncate max-w-[150px]">{activeRoom?.name}</h2>
-                        <span className="text-[10px] text-gray-400 block">실시간 대화 중</span>
+                        <span className="text-[10px] text-green-500 font-bold block">● 실시간 연결됨</span>
                     </div>
                 </div>
                 
@@ -453,7 +464,7 @@ export function ChatTab() {
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
-                    {/* 🌟 AI 매니저 모달 (myId prop 전달 추가됨) */}
+                    {/* 🌟 AI 모임 매니저 (일정 등록 탭 포함) */}
                     {showPlanner && (
                         <MeetingPlanner roomId={activeRoom?.id} myId={myId} onClose={() => setShowPlanner(false)} />
                     )}

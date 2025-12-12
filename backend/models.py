@@ -66,9 +66,13 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     name = Column(String, index=True)
+    
+    # 🌟 [신규] 데이터 분석용 세분화 필드
+    gender = Column(String, default="unknown") # male, female, unknown
+    age_group = Column(String, default="20s")  # 10s, 20s, 30s, 40s, 50+
+    
     avatar = Column(String)
     manner = Column(Float, default=36.5)
-    
     lat = Column(Float, default=37.566)
     lng = Column(Float, default=126.978)
     

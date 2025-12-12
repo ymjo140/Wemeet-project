@@ -10,14 +10,23 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+# 👇 [추가] Session 임포트 필수!
+from sqlalchemy.orm import Session 
 from database import engine, SessionLocal
 import models
 from routers import auth, users, meetings, community, sync, coins
 from dependencies import get_password_hash
+# 👇 [추가] analytics 엔진 임포트
+from analytics import DemandIntelligenceEngine
 
 # DB 테이블 생성
 models.Base.metadata.create_all(bind=engine)
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -90,3 +99,24 @@ app.include_router(coins.router)
 @app.get("/")
 def read_root():
     return {"status": "WeMeet API Running 🚀"}
+@app.get("/api/b2b/demand-forecast")
+
+def get_b2b_forecast(
+    region: str = "강남", 
+    days: int = 7, 
+    db: Session = Depends(get_db)
+):
+    """
+    🏢 B2B 고객(사장님/프랜차이즈)용 미래 수요 예측 데이터 조회
+    - 오직 DB에 저장된 '확정된 약속(Event)' 데이터만을 분석하여 반환합니다.
+    - 데이터가 없으면 0으로 반환됩니다.
+    """
+    engine = DemandIntelligenceEngine(db)
+    
+    # 분석 엔진이 DB를 조회하여 결과를 계산
+    result = engine.get_future_demand(region, days)
+    
+    # 시뮬레이션(데모) 데이터 로직 제거됨.
+    # 이제 DB에 데이터가 없으면 total_expected_visitors는 0이 됩니다.
+    
+    return result
