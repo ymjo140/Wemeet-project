@@ -371,7 +371,22 @@ class NlpRequest(BaseModel): text: str
 class AvailabilityRequest(BaseModel): user_ids: List[int]; days_to_check: int = 7
 class EventSchema(BaseModel): id: Optional[str] = None; user_id: int; title: str; date: str; time: str; duration_hours: float = 1.5; location_name: Optional[str] = None; purpose: str; model_config = ConfigDict(from_attributes=True)
 class ParticipantSchema(BaseModel): id: int; name: str; lat: float; lng: float; transport: str = "subway"; history_poi_ids: List[int] = []
-class MeetingFlowRequest(BaseModel): room_id: Optional[str] = None; participants: List[ParticipantSchema] = []; purpose: str = "식사"; user_tags: List[str] = []; existing_midpoints: Optional[List[Dict[str, Any]]] = None; days_to_check: int = 7; manual_locations: List[str] = []
+class MeetingCondition(BaseModel):
+    date: str
+    time: str
+    budget_range: List[int]
+    category: str
+    tags: List[str]
+    detail_prompt: str
+class MeetingFlowRequest(BaseModel): 
+    room_id: Optional[str] = None
+    participants: List[ParticipantSchema] = []
+    purpose: str = "식사"
+    user_tags: List[str] = []
+    conditions: Optional[MeetingCondition] = None
+    existing_midpoints: Optional[List[Dict[str, Any]]] = None
+    days_to_check: int = 7
+    manual_locations: List[str] = []
 
 # --- Helper Functions ---
 def save_place_to_db(db: Session, poi_list: List[Any], center_lat: float, center_lng: float):
@@ -477,121 +492,170 @@ class MeetingFlowEngine:
         return sorted(slots, key=get_score, reverse=True)
 
     def plan_meeting(self, req: MeetingFlowRequest, db: Session) -> Dict[str, Any]:
-        part_dicts = []
+        # 🌟 1. 채팅방 기반 로직 (room_id가 있을 때)
         if req.room_id:
-             try:
-                 room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == req.room_id).all()
-                 if room_members:
-                     member_ids = [m.user_id for m in room_members]
-                     users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
-                     for u in users: part_dicts.append({ "id": u.id, "name": u.name, "lat": u.lat, "lng": u.lng, "preferences": u.preferences or {} })
-             except: pass
-
-        if req.participants:
-            for p in req.participants: 
-                db_user = db.query(models.User).filter(models.User.id == p.id).first()
-                part_dicts.append({"id": p.id, "name": p.name, "lat": p.lat, "lng": p.lng, "preferences": db_user.preferences if db_user else {}})
+            # (1) 실제 채팅방 멤버 조회 (ChatRoomMember)
+            room_members = db.query(models.ChatRoomMember).filter(models.ChatRoomMember.room_id == req.room_id).all()
+            if not room_members:
+                return {"status": "failed", "message": "채팅방 멤버가 없습니다."}
             
-        if req.manual_locations:
-            for idx, loc_name in enumerate(req.manual_locations):
-                if loc_name.strip():
-                    lat, lng = data_provider.get_coordinates(loc_name)
-                    if lat != 0.0: part_dicts.append({"id": 9000+idx, "name": loc_name, "lat": lat, "lng": lng, "preferences": {}})
-
-        regions = []
-        if len(part_dicts) > 1:
-            try:
-                if len(part_dicts) == 2:
-                    avg_lat = sum(p['lat'] for p in part_dicts) / len(part_dicts)
-                    avg_lng = sum(p['lng'] for p in part_dicts) / len(part_dicts)
-                    top_regions = find_top_3_midpoints_odsay(part_dicts, avg_lat, avg_lng)
-                    for name, lat, lng in top_regions:
-                        regions.append({"region_name": name, "lat": lat, "lng": lng})
-                else:
-                    top_regions_cached = find_best_place_for_group(part_dicts)
-                    for r in top_regions_cached:
-                        regions.append(r)
-            except Exception as e: 
-                print(f"🔥 플래너 중간지점 오류: {e}")
-                pass
-        else:
-             regions = [{"region_name": "서울 시청", "lat": 37.5665, "lng": 126.9780}]
-        
-        recommendations = []
-        config = PURPOSE_CONFIG.get(req.purpose, PURPOSE_CONFIG["식사"])
-        allowed_types = config.get("allowed", ["restaurant"])
-        if "비즈니스" in req.purpose and any(x in str(req.user_tags) for x in ["회의", "워크샵", "스터디"]): allowed_types = ["workspace"]
-
-        for region in regions:
-            r_name = region.get('region_name', '중간지점').split('(')[0].strip()
-            final_keywords = expand_tags_to_keywords(req.purpose, req.user_tags, r_name)
+            member_ids = [m.user_id for m in room_members]
+            users = db.query(models.User).filter(models.User.id.in_(member_ids)).all()
             
-            pois = search_places_in_db(db, r_name, final_keywords, allowed_types)
-            if len(pois) < 5:
-                api_pois = self.provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
-                save_place_to_db(db, api_pois, region.get("lat"), region.get("lng"))
-                existing_names = {p.name for p in pois}
-                for p in api_pois:
-                    if p.name not in existing_names: pois.append(p)
+            # (2) 중간 지점 계산 (멤버들의 DB 좌표 이용)
+            lats = [u.lat for u in users]
+            lngs = [u.lng for u in users]
+            if lats and lngs:
+                center_lat = sum(lats) / len(lats)
+                center_lng = sum(lngs) / len(lngs)
+            else:
+                center_lat, center_lng = 37.5665, 126.9780
+            
+            # (3) 황금 시간대 찾기 (캘린더 분석)
+            best_time_str = find_best_time_slot(db, member_ids, req.days_to_check)
+            
+            # (4) 멤버들의 선호 태그(Preference) 취합
+            aggregated_tags = []
+            for u in users:
+                if u.preferences and "tag_weights" in u.preferences:
+                    sorted_tags = sorted(u.preferences["tag_weights"].items(), key=lambda x: x[1], reverse=True)
+                    aggregated_tags.extend([t[0] for t in sorted_tags[:3]]) # 상위 3개씩
+            
+            final_tags = list(set(req.user_tags + aggregated_tags))
+            
+            # (5) 장소 검색 (중간 지점 근처 + 취향 반영)
+            # 여기서는 DB 검색을 우선하고, 없으면 Fallback을 사용합니다.
+            region_name = "중간지점" # API 검색을 위한 더미 이름
+            
+            # DB에서 검색
+            lat_min, lat_max = center_lat - 0.02, center_lat + 0.02
+            lng_min, lng_max = center_lng - 0.02, center_lng + 0.02
+            
+            places = db.query(models.Place).filter(
+                models.Place.lat.between(lat_min, lat_max),
+                models.Place.lng.between(lng_min, lng_max),
+                models.Place.category == req.purpose
+            ).all()
+            
+            # 추천 장소 선정 (태그 매칭 점수)
+            scored_places = []
+            for p in places:
+                score = 0
+                if p.tags:
+                    matches = set(p.tags) & set(final_tags)
+                    score += len(matches) * 10
+                score += (p.wemeet_rating or 0) * 5
+                scored_places.append((score, p))
+            
+            scored_places.sort(key=lambda x: x[0], reverse=True)
+            
+            if scored_places:
+                best_place = scored_places[0][1]
+                place_data = {"name": best_place.name, "category": best_place.category, "tags": best_place.tags}
+            else:
+                place_data = {"name": "추천 장소 없음", "category": req.purpose, "tags": []}
 
-            valid_pois = []
-            for p in pois:
-                dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
-                if dist < 0.02: valid_pois.append(p)
-
-            algo_users = [agora_algo.UserProfile(id=p.get('id',0), preferences=p.get('preferences', {}), history=[]) for p in part_dicts]
-            try:
-                engine = agora_algo.AdvancedRecommender(algo_users, valid_pois)
-                results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_tags)
-                recs = [{"id": p.id, "name": p.name, "category": p.category, "score": float(s), "tags": p.tags, "location": [p.location[0], p.location[1]]} for p, s in results[:10]]
-            except: recs = []
-            recommendations.append({**region, "name": r_name, "recommendations": recs})
-        
-        user_ids = [p.get('id') for p in part_dicts if p.get('id')]
-        target_duration = PURPOSE_DURATIONS.get(req.purpose, 1.5)
-        raw_availability = compute_availability_slots(user_ids, req.days_to_check, db, required_duration=target_duration)
-        ranked_availability = self._rank_time_slots(raw_availability, req.purpose)
-        final_top3 = ranked_availability[:3]
-        if not final_top3: final_top3 = [(datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")]
-        
-        # 🌟 [New] Find Best Time (황금 시간대)
-        best_time_str = find_best_time_slot(db, user_ids, req.days_to_check)
-
-        cards = []
-        best_place = {"name": "장소 미정", "category": "식사", "tags": []}
-
-        for i, time_slot in enumerate(final_top3):
-            place = {"name": "장소 미정", "tags": []}; region_name = "중간지점"
-            if recommendations:
-                rec_idx = i % len(recommendations)
-                target_region = recommendations[rec_idx]
-                region_name = target_region.get("name", target_region.get("region_name", "추천 지역"))
-                if target_region.get("recommendations"): 
-                    place = target_region["recommendations"][0]
-                    if i == 0: best_place = place # 첫 번째 추천을 베스트로 선정
-
-            cards.append({"time": time_slot, "region": region_name, "place": place})
-
-        # 🌟 [New] Send Vote Card if room_id exists
-        if req.room_id:
-            content_json = f"""{{
+            # (6) 카드 뉴스 메시지 전송
+            content_json = json.dumps({
                 "type": "vote_card",
-                "place": {{
-                    "name": "{best_place['name']}",
-                    "category": "{best_place.get('category', '식사')}",
-                    "tags": {str(best_place.get('tags', [])).replace("'", '"')}
-                }},
-                "recommendation_reason": "👥 멤버들의 중간 지점에서 가깝고,\\n📅 {best_time_str}에 모두 시간이 됩니다!",
+                "place": place_data,
+                "recommendation_reason": f"👥 {len(users)}명의 중간 지점이고,\n📅 {best_time_str}에 모두 가능합니다!",
                 "vote_count": 0
-            }}"""
+            }, ensure_ascii=False)
             
             bot_msg = models.Message(
                 room_id=str(req.room_id), user_id=1, content=content_json, timestamp=datetime.now()
             )
             db.add(bot_msg)
             db.commit()
+            
+            return {
+                "status": "success",
+                "recommended_place": place_data["name"],
+                "recommended_time": best_time_str
+            }
 
-        return {"cards": cards, "all_available_slots": sorted(raw_availability)}
+        # 🌟 2. 일반 홈 탭 로직 (Manual Mode - 기존 로직 유지)
+        else:
+            part_dicts = []
+            if req.participants:
+                for p in req.participants: 
+                    db_user = db.query(models.User).filter(models.User.id == p.id).first()
+                    part_dicts.append({"id": p.id, "name": p.name, "lat": p.lat, "lng": p.lng, "preferences": db_user.preferences if db_user else {}})
+                
+            if req.manual_locations:
+                for idx, loc_name in enumerate(req.manual_locations):
+                    if loc_name.strip():
+                        lat, lng = data_provider.get_coordinates(loc_name)
+                        if lat != 0.0: part_dicts.append({"id": 9000+idx, "name": loc_name, "lat": lat, "lng": lng, "preferences": {}})
+
+            regions = []
+            if len(part_dicts) > 1:
+                try:
+                    if len(part_dicts) == 2:
+                        avg_lat = sum(p['lat'] for p in part_dicts) / len(part_dicts)
+                        avg_lng = sum(p['lng'] for p in part_dicts) / len(part_dicts)
+                        top_regions = find_top_3_midpoints_odsay(part_dicts, avg_lat, avg_lng)
+                        for name, lat, lng in top_regions:
+                            regions.append({"region_name": name, "lat": lat, "lng": lng})
+                    else:
+                        top_regions_cached = find_best_place_for_group(part_dicts)
+                        for r in top_regions_cached:
+                            regions.append(r)
+                except Exception as e: 
+                    print(f"🔥 플래너 중간지점 오류: {e}")
+                    pass
+            else:
+                 regions = [{"region_name": "서울 시청", "lat": 37.5665, "lng": 126.9780}]
+            
+            recommendations = []
+            config = PURPOSE_CONFIG.get(req.purpose, PURPOSE_CONFIG["식사"])
+            allowed_types = config.get("allowed", ["restaurant"])
+            if "비즈니스" in req.purpose and any(x in str(req.user_tags) for x in ["회의", "워크샵", "스터디"]): allowed_types = ["workspace"]
+
+            for region in regions:
+                r_name = region.get('region_name', '중간지점').split('(')[0].strip()
+                final_keywords = expand_tags_to_keywords(req.purpose, req.user_tags, r_name)
+                
+                pois = search_places_in_db(db, r_name, final_keywords, allowed_types)
+                if len(pois) < 5:
+                    api_pois = self.provider.search_places_all_queries(final_keywords, r_name, region.get("lat"), region.get("lng"), allowed_types=allowed_types)
+                    save_place_to_db(db, api_pois, region.get("lat"), region.get("lng"))
+                    existing_names = {p.name for p in pois}
+                    for p in api_pois:
+                        if p.name not in existing_names: pois.append(p)
+
+                valid_pois = []
+                for p in pois:
+                    dist = ((p.location[0] - region['lat'])**2 + (p.location[1] - region['lng'])**2)**0.5
+                    if dist < 0.02: valid_pois.append(p)
+
+                algo_users = [agora_algo.UserProfile(id=p.get('id',0), preferences=p.get('preferences', {}), history=[]) for p in part_dicts]
+                try:
+                    engine = agora_algo.AdvancedRecommender(algo_users, valid_pois)
+                    results = engine.recommend(req.purpose, np.array([region.get("lat"), region.get("lng")]), req.user_tags)
+                    recs = [{"id": p.id, "name": p.name, "category": p.category, "score": float(s), "tags": p.tags, "location": [p.location[0], p.location[1]]} for p, s in results[:10]]
+                except: recs = []
+                recommendations.append({**region, "name": r_name, "recommendations": recs})
+            
+            # 홈 탭 로직은 기존 반환 구조 유지 (cards 리스트 등)
+            user_ids = [p.get('id') for p in part_dicts if p.get('id')]
+            target_duration = PURPOSE_DURATIONS.get(req.purpose, 1.5)
+            raw_availability = compute_availability_slots(user_ids, req.days_to_check, db, required_duration=target_duration)
+            ranked_availability = self._rank_time_slots(raw_availability, req.purpose)
+            final_top3 = ranked_availability[:3]
+            if not final_top3: final_top3 = [(datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")]
+            
+            cards = []
+            for i, time_slot in enumerate(final_top3):
+                place = {"name": "장소 미정", "tags": []}; region_name = "중간지점"
+                if recommendations:
+                    rec_idx = i % len(recommendations)
+                    target_region = recommendations[rec_idx]
+                    region_name = target_region.get("name", target_region.get("region_name", "추천 지역"))
+                    if target_region.get("recommendations"): place = target_region["recommendations"][0]
+                cards.append({"time": time_slot, "region": region_name, "place": place})
+            return {"cards": cards, "all_available_slots": sorted(raw_availability)}
 
 # --- Main Logic ---
 def run_group_recommendation(req: RecommendRequest, db: Session):
