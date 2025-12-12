@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check } from "lucide-react"
+import { ArrowLeft, Send, Loader2, X, LogOut, Calendar, MapPin, Check, ChevronDown, ChevronUp, Clock } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -35,8 +35,16 @@ const AI_FILTER_OPTIONS: Record<string, any> = {
     }
 };
 
+// 날짜 포맷팅 헬퍼
+const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const days = ["일", "월", "화", "수", "목", "금", "토"];
+    return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
+};
+
 // 🌟 AI 모임 매니저 컴포넌트 (장소 추천 + 일정 등록 통합)
-const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: number | null, onClose: () => void }) => {
+// 수정됨: onRefresh prop 추가 (부모 컴포넌트의 메시지 새로고침 함수)
+const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, myId: number | null, onClose: () => void, onRefresh: () => void }) => {
     const [activeTab, setActiveTab] = useState("recommend") // recommend | schedule
     
     // -- 장소 추천 State --
@@ -46,10 +54,34 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
     const [selectedPurpose, setSelectedPurpose] = useState("식사");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
+    // -- 일정 추천 State (New) --
+    const [recommendedDates, setRecommendedDates] = useState<any[]>([]);
+    const [showAllDates, setShowAllDates] = useState(false);
+    const [selectedDateSlot, setSelectedDateSlot] = useState<any>(null);
+
     // -- 일정 등록 State --
     const [scheduleInput, setScheduleInput] = useState("");
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [parsedSchedule, setParsedSchedule] = useState<any>(null);
+
+    // 컴포넌트 로드 시 '가능한 날짜' 분석 시작
+    useEffect(() => {
+        analyzeAvailableDates();
+    }, []);
+
+    const analyzeAvailableDates = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${API_URL}/api/chat/rooms/${roomId}/available-dates`, {
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
+            
+            if (res.ok) {
+                const candidates = await res.json();
+                setRecommendedDates(candidates);
+            }
+        } catch (e) { console.error(e); }
+    };
 
     const toggleTag = (tag: string) => {
         if (selectedTags.includes(tag)) setSelectedTags(prev => prev.filter(t => t !== tag));
@@ -61,18 +93,23 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
         setRecLoading(true)
         try {
             const token = localStorage.getItem("token");
+            
+            // 선택된 날짜가 있으면 그 날짜로, 없으면 'today'
+            const targetDate = selectedDateSlot ? selectedDateSlot.fullDate : "today";
+            const targetTime = selectedDateSlot ? selectedDateSlot.time : "19:00";
+
             const detailedPrompt = `
                 1. 기본 조건: ${selectedPurpose} 목적, ${budget[0]}~${budget[1]}만원 예산.
                 2. 선호 키워드: ${selectedTags.join(", ")}.
-                3. ★중요★: 'room_id' ${roomId}번에 속한 모든 참여자들의 DB상 '선호 음식/취향' 데이터를 반드시 조회해서 반영할 것. 
+                3. 일정: ${targetDate} ${targetTime}에 적합한 곳.
             `.trim();
 
             const payload = {
                 room_id: Number(roomId),
                 purpose: selectedPurpose, 
                 conditions: {
-                    date: "today",
-                    time: "19:00",
+                    date: targetDate,
+                    time: targetTime,
                     budget_range: budget,
                     category: selectedPurpose,
                     tags: selectedTags,
@@ -90,9 +127,11 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
             })
 
             if(res.ok) {
-                alert("AI가 추천 장소를 채팅방에 전송했습니다!");
+                // 🌟 [수정] alert 제거 -> 즉시 새로고침 -> 닫기
+                onRefresh(); 
                 onClose();
             } else {
+                // 에러 상황에서는 alert 유지 (사용자 알림용)
                 alert("추천 실패. 다시 시도해주세요.");
             }
         } catch (e) { console.error(e); alert("오류 발생"); } 
@@ -129,7 +168,7 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    user_id: myId, // 현재 로그인한 유저 ID
+                    user_id: myId,
                     title: parsedSchedule.title || "새 약속",
                     date: parsedSchedule.date,
                     time: parsedSchedule.time,
@@ -140,19 +179,22 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
             });
 
             if(res.ok) {
-                alert("📅 일정이 캘린더에 등록되었습니다!");
-                // 채팅방에도 알림 메시지 보내기 (API 호출)
+                // 채팅방에도 알림 메시지 보내기
                 await fetch(`${API_URL}/api/chat/message`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
                     body: JSON.stringify({ room_id: Number(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
                 });
+                
+                // 🌟 [수정] alert 제거 -> 즉시 새로고침 -> 닫기
+                onRefresh();
                 onClose();
             }
         } catch(e) { console.error(e); alert("등록 실패"); }
     }
 
     const currentOptions = AI_FILTER_OPTIONS[selectedPurpose];
+    const visibleDates = showAllDates ? recommendedDates : recommendedDates.slice(0, 3);
 
     return (
         <div className="w-full bg-white border-2 border-[#7C3AED]/20 rounded-3xl p-5 shadow-lg relative overflow-hidden mb-4 animate-in slide-in-from-top-2">
@@ -173,6 +215,36 @@ const MeetingPlanner = ({ roomId, myId, onClose }: { roomId: string, myId: numbe
 
                 {/* --- 탭 1: 장소 추천 --- */}
                 <TabsContent value="recommend" className="space-y-5">
+                    
+                    {/* 날짜 추천 섹션 */}
+                    <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold text-indigo-800 flex items-center gap-1">
+                                <Clock className="w-3 h-3"/> 추천 일정 (자동 분석)
+                            </label>
+                            <button onClick={() => setShowAllDates(!showAllDates)} className="text-[10px] text-indigo-500 flex items-center hover:underline">
+                                {showAllDates ? "접기" : "더보기"} {showAllDates ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {visibleDates.map((slot, i) => (
+                                <div 
+                                    key={i} 
+                                    onClick={() => setSelectedDateSlot(slot)}
+                                    className={`cursor-pointer rounded-lg p-2 text-center border transition-all ${selectedDateSlot === slot ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white border-gray-200 hover:border-indigo-300"}`}
+                                >
+                                    <div className="text-[10px] opacity-80">{slot.displayDate}</div>
+                                    <div className="text-xs font-bold">{slot.time}</div>
+                                </div>
+                            ))}
+                        </div>
+                        {selectedDateSlot && (
+                            <div className="mt-2 text-center text-[10px] text-indigo-600 font-medium animate-pulse">
+                                ✅ "{selectedDateSlot.displayDate} {selectedDateSlot.time}" 기준으로 장소를 추천합니다.
+                            </div>
+                        )}
+                    </div>
+
                     <div className="flex gap-4">
                         <div className="flex-1 space-y-1">
                             <label className="text-xs font-bold text-gray-500">인원</label>
@@ -293,6 +365,11 @@ const VoteCard = ({ data }: { data: any }) => {
             <div className="flex gap-1 mb-2 flex-wrap">
                 {data.place?.tags?.map((t: string, i: number) => <span key={i} className="bg-gray-100 text-[10px] px-1 rounded text-gray-500">#{t}</span>)}
             </div>
+            {data.recommendation_reason && (
+                <div className="bg-teal-50 p-2 rounded-lg text-[10px] text-teal-700 mb-2 whitespace-pre-line">
+                    {data.recommendation_reason}
+                </div>
+            )}
             <Button className="w-full h-8 text-xs bg-teal-50 text-teal-600 hover:bg-teal-100 font-bold border border-teal-100">👍 투표하기 ({data.vote_count || 0})</Button>
         </div>
     )
@@ -336,24 +413,29 @@ export function ChatTab() {
         } catch(e) {}
     }
 
-    // 🌟 WebSocket 연결 및 실시간 수신
+    // 🌟 메시지 로드 함수 (컴포넌트 스코프로 이동하여 전달 가능하게 함)
+    const fetchMessages = async () => {
+        if (!activeRoom) return;
+        const token = localStorage.getItem("token");
+        try {
+            const res = await fetch(`${API_URL}/api/chat/${activeRoom.id}/messages`, {
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                setMessages(await res.json());
+                // 스크롤 아래로
+                setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
+            }
+        } catch(e) {}
+    };
+
+    // WebSocket 연결 및 실시간 수신
     useEffect(() => {
         if (view === 'room' && activeRoom) {
             setShowPlanner(false)
-            
-            // 1. 기존 메시지 로드 (HTTP)
-            const fetchInitialMessages = async () => {
-                const token = localStorage.getItem("token");
-                try {
-                    const res = await fetch(`${API_URL}/api/chat/${activeRoom.id}/messages`, {
-                        headers: token ? { "Authorization": `Bearer ${token}` } : {}
-                    });
-                    if (res.ok) setMessages(await res.json());
-                } catch(e) {}
-            };
-            fetchInitialMessages();
+            fetchMessages(); // 초기 로드
 
-            // 2. WebSocket 연결
+            // WebSocket 연결
             const token = localStorage.getItem("token");
             const wsUrl = `${WS_URL}/api/ws/${activeRoom.id}?token=${token}`;
             const ws = new WebSocket(wsUrl);
@@ -464,9 +546,14 @@ export function ChatTab() {
                 <div className="flex flex-col gap-3 pb-4">
                     <div className="flex justify-center my-4"><span className="bg-gray-200/60 text-gray-500 text-[10px] px-3 py-1 rounded-full">대화가 시작되었습니다.</span></div>
 
-                    {/* 🌟 AI 모임 매니저 (일정 등록 탭 포함) */}
+                    {/* 🌟 AI 모임 매니저 (onRefresh 전달됨!) */}
                     {showPlanner && (
-                        <MeetingPlanner roomId={activeRoom?.id} myId={myId} onClose={() => setShowPlanner(false)} />
+                        <MeetingPlanner 
+                            roomId={activeRoom?.id} 
+                            myId={myId} 
+                            onClose={() => setShowPlanner(false)} 
+                            onRefresh={fetchMessages} 
+                        />
                     )}
 
                     {messages.map((msg, i) => {
