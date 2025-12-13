@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from sqlalchemy.orm.attributes import flag_modified
-from typing import List, Optional, Any
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
 import models
@@ -24,12 +23,26 @@ class ReviewCreate(BaseModel):
 class FavoriteRequest(BaseModel): place_id: int; place_name: str
 class FriendRequest(BaseModel): email: str
 class FriendAccept(BaseModel): request_id: int
+class LocationUpdate(BaseModel): location_name: str; lat: float; lng: float
 
-# 🌟 [신규] 위치 업데이트 모델
-class LocationUpdate(BaseModel):
-    location_name: str
+# 🌟 [신규] 고도화된 온보딩 요청 모델
+class OnboardingRequest(BaseModel):
+    # 1. 프로필
+    name: str
+    gender: str      # male, female, etc
+    age_group: str   # 10s, 20s, 30s...
+    job_status: str  # student, worker, etc (옵션)
+    
+    # 2. 위치
     lat: float
     lng: float
+    location_name: str
+    
+    # 3. AI 취향 분석 데이터
+    preferred_foods: List[str] = []   # 한식, 일식...
+    preferred_vibes: List[str] = []   # 조용한, 힙한...
+    preferred_alcohol: List[str] = [] # 소주, 와인...
+    avg_budget: int = 20000           # 인당 평균 예산
 
 # --- User Info API ---
 @router.get("/api/users/me")
@@ -41,13 +54,40 @@ def get_my_info(current_user: models.User = Depends(get_current_user), db: Sessi
     
     return {
         "id": current_user.id, "name": current_user.name, "email": current_user.email,
+        "gender": current_user.gender, "age_group": current_user.age_group,
         "preferences": current_user.preferences, 
         "location": {"lat": current_user.lat, "lng": current_user.lng},
-        "location_name": current_user.location_name, # 🌟 추가
+        "location_name": current_user.location_name,
         "wallet_balance": current_user.wallet_balance, "avatar": avatar_data, "favorites": current_user.favorites, "reviews": my_reviews
     }
 
-# 🌟 [신규] 내 위치 업데이트 API
+# 🌟 [수정] 온보딩 완료 API (상세 정보 저장)
+@router.post("/api/users/me/onboarding")
+def complete_onboarding(req: OnboardingRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 1. 기본 프로필 저장
+    current_user.name = req.name
+    current_user.gender = req.gender
+    current_user.age_group = req.age_group
+    
+    # 2. 위치 저장
+    current_user.lat = req.lat
+    current_user.lng = req.lng
+    current_user.location_name = req.location_name
+    
+    # 3. 취향 정보 구조화하여 JSON 저장
+    preferences = {
+        "foods": req.preferred_foods,
+        "vibes": req.preferred_vibes,
+        "alcohol": req.preferred_alcohol,
+        "avg_spend": req.avg_budget,
+        "job_status": req.job_status
+    }
+    current_user.preferences = preferences
+    flag_modified(current_user, "preferences")
+    
+    db.commit()
+    return {"message": "Onboarding completed", "user": {"name": current_user.name, "preferences": preferences}}
+
 @router.put("/api/users/me/location")
 def update_user_location(req: LocationUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     current_user.location_name = req.location_name

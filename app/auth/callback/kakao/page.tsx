@@ -1,66 +1,56 @@
 "use client"
 
-import { useEffect, useRef, Suspense } from "react"
+import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
-// 1. 실제 로직이 들어있는 컴포넌트 (분리)
-function KakaoCallbackContent() {
+export default function KakaoCallback() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const code = searchParams.get("code")
-  
-  const isCalledRef = useRef(false)
+  const [status, setStatus] = useState("카카오 로그인 처리 중...")
 
   useEffect(() => {
-    const login = async () => {
-      if (code && !isCalledRef.current) {
-        isCalledRef.current = true 
-
-        try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/auth/kakao", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code }),
-          })
+    if (code) {
+      fetch("https://wemeet-backend-xqlo.onrender.com/api/auth/kakao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.access_token) {
+          localStorage.setItem("token", data.access_token)
           
-          const data = await res.json()
-
-          if (res.ok) {
-            if (data.access_token) {
-                localStorage.setItem("token", data.access_token)
-                localStorage.setItem("userId", String(data.user_id))
-                localStorage.setItem("userName", data.name)
-                window.location.href = "/"
+          // 🌟 로그인 후 사용자 정보 확인 (온보딩 필요 여부 체크)
+          fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", {
+            headers: { "Authorization": `Bearer ${data.access_token}` }
+          })
+          .then(res => res.json())
+          .then(user => {
+            // 위치가 미설정 상태이거나, 이름이 자동생성(User_...)인 경우 온보딩으로
+            if (!user.location_name || user.location_name === "위치 미설정" || user.name.startsWith("User_")) {
+                router.push("/onboarding")
             } else {
-                alert("로그인 처리는 되었으나 토큰이 없습니다.")
-                router.push("/login")
+                router.push("/")
             }
-          } else {
-            alert(`로그인 실패: ${data.detail || "알 수 없는 오류"}`)
-            router.push("/login")
-          }
-        } catch (e) {
-          alert("로그인 중 오류가 발생했습니다.")
+          })
+        } else {
+          alert("로그인 실패")
           router.push("/login")
         }
-      }
+      })
+      .catch(() => {
+        alert("서버 오류가 발생했습니다.")
+        router.push("/login")
+      })
     }
-    login()
   }, [code, router])
 
   return (
-    <div className="h-screen flex items-center justify-center flex-col gap-4">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      <p className="text-gray-500 font-medium">카카오 로그인 중입니다...</p>
+    <div className="flex h-screen items-center justify-center bg-white flex-col gap-4">
+      <Loader2 className="w-10 h-10 animate-spin text-[#7C3AED]" />
+      <p className="text-gray-500 font-bold">{status}</p>
     </div>
-  )
-}
-
-// 2. Suspense로 감싸는 메인 컴포넌트 (필수!)
-export default function KakaoCallbackPage() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <KakaoCallbackContent />
-    </Suspense>
   )
 }
