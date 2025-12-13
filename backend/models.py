@@ -133,7 +133,7 @@ class ChatRoomMember(Base):
     __tablename__ = "chat_room_members"
     
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("chat_rooms.id"))
+    room_id = Column(String, ForeignKey("chat_rooms.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
     joined_at = Column(DateTime, default=datetime.now)
     
