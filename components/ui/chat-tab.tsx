@@ -35,15 +35,7 @@ const AI_FILTER_OPTIONS: Record<string, any> = {
     }
 };
 
-// 날짜 포맷팅 헬퍼
-const formatDate = (dateStr: string) => {
-    if (!dateStr) return "";
-    const d = new Date(dateStr);
-    const days = ["일", "월", "화", "수", "목", "금", "토"];
-    return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
-};
-
-// 🌟 [VoteCard] 투표 및 확정 기능 API 연동 완료
+// 🌟 [VoteCard] 투표 및 확정 기능
 const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId: number, roomId: string, onRefresh: () => void }) => {
     const [votes, setVotes] = useState(data.vote_count || 0);
     const [voted, setVoted] = useState(false);
@@ -149,7 +141,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
     )
 }
 
-// 🌟 [MeetingPlanner] UI 전체 유지 + 백그라운드 요청 로직 적용
+// 🌟 [MeetingPlanner] UI + DB 위치 연동
 const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, myId: number | null, onClose: () => void, onRefresh: () => void }) => {
     const [activeTab, setActiveTab] = useState("recommend") 
     
@@ -170,26 +162,46 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [parsedSchedule, setParsedSchedule] = useState<any>(null);
 
-    // 컴포넌트 로드 시 '가능한 날짜' 분석 시작
-    useEffect(() => {
-        analyzeAvailableDates();
-    }, [roomId]);
+    // -- 🌟 내 위치 State (DB) --
+    const [myLocation, setMyLocation] = useState<{lat: number, lng: number} | null>(null);
+    const [locationLabel, setLocationLabel] = useState("위치 확인 중...");
 
-    const analyzeAvailableDates = async () => {
-        try {
+    // 초기 데이터 로드 (일정 및 내 위치)
+    useEffect(() => {
+        const loadData = async () => {
             const token = localStorage.getItem("token");
-            const res = await fetch(`${API_URL}/api/chat/rooms/${roomId}/available-dates`, {
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            });
-            
-            if (res.ok) {
-                const candidates = await res.json();
-                setRecommendedDates(candidates);
-                // 기본값으로 첫 번째 날짜 선택
-                if(candidates.length > 0) setSelectedDateSlot(candidates[0]);
-            }
-        } catch (e) { console.error(e); }
-    };
+            if (!token) return;
+
+            // 1. 내 정보(위치) 불러오기 - DB 연동
+            try {
+                const userRes = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
+                if (userRes.ok) {
+                    const user = await userRes.json();
+                    if (user.lat && user.lng && Math.abs(user.lat) > 1.0) {
+                        setMyLocation({ lat: user.lat, lng: user.lng });
+                        setLocationLabel(`📍 ${user.location_name || '내 설정 위치'}`);
+                    } else {
+                        setLocationLabel("⚠️ 위치 미설정 (설정 필요)");
+                    }
+                }
+            } catch (e) { console.error("위치 로드 실패:", e); }
+
+            // 2. 가능한 날짜 불러오기
+            try {
+                const dateRes = await fetch(`${API_URL}/api/chat/rooms/${roomId}/available-dates`, {
+                    headers: token ? { "Authorization": `Bearer ${token}` } : {}
+                });
+                
+                if (dateRes.ok) {
+                    const candidates = await dateRes.json();
+                    setRecommendedDates(candidates);
+                    if(candidates.length > 0) setSelectedDateSlot(candidates[0]);
+                }
+            } catch (e) { console.error(e); }
+        };
+
+        loadData();
+    }, [roomId]);
 
     const toggleTag = (tag: string) => {
         if (selectedTags.includes(tag)) setSelectedTags(prev => prev.filter(t => t !== tag));
@@ -202,7 +214,6 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
         try {
             const token = localStorage.getItem("token");
             
-            // 선택된 날짜가 있으면 그 날짜로, 없으면 'auto'
             const targetDate = selectedDateSlot ? selectedDateSlot.fullDate : "auto";
             const targetTime = selectedDateSlot ? selectedDateSlot.time : "auto";
 
@@ -214,7 +225,10 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
 
             const payload = {
                 room_id: String(roomId),
-                purpose: selectedPurpose, 
+                purpose: selectedPurpose,
+                // 🌟 DB에서 가져온 내 위치 사용 (없으면 0.0을 보내 백엔드에서 처리)
+                current_lat: myLocation?.lat || 0.0,
+                current_lng: myLocation?.lng || 0.0, 
                 conditions: {
                     date: targetDate,
                     time: targetTime,
@@ -225,7 +239,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 }
             }
 
-            // 요청만 보내고 결과는 소켓으로 받음 (await 없이 fetch)
+            // 요청만 보내고 결과는 소켓으로 받음 (await 없이)
             fetch(`${API_URL}/api/meeting-flow`, {
                 method: "POST",
                 headers: { 
@@ -235,7 +249,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 body: JSON.stringify(payload)
             })
 
-            // 즉시 닫기 (백그라운드 진행 알림은 소켓으로 옴)
+            // 즉시 닫기
             onClose();
 
         } catch (e) { console.error(e); alert("오류 발생"); } 
@@ -319,6 +333,13 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 {/* --- 탭 1: 장소 추천 --- */}
                 <TabsContent value="recommend" className="space-y-5">
                     
+                    {/* 🌟 위치 정보 표시 (DB값) */}
+                    <div className="text-center mb-1">
+                        <span className="bg-gray-100 text-gray-600 text-[11px] px-3 py-1 rounded-full font-bold border border-gray-200">
+                            {locationLabel}
+                        </span>
+                    </div>
+
                     {/* 날짜 추천 섹션 */}
                     <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
                         <div className="flex justify-between items-center mb-2">
@@ -345,13 +366,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                             </div>
                         ) : (
                             <div className="text-center text-xs text-gray-400 py-2">
-                                분석 중...
-                            </div>
-                        )}
-
-                        {selectedDateSlot && (
-                            <div className="mt-2 text-center text-[10px] text-indigo-600 font-medium animate-pulse">
-                                ✅ "{selectedDateSlot.displayDate} {selectedDateSlot.time}" 기준으로 장소를 추천합니다.
+                                일정 분석 중...
                             </div>
                         )}
                     </div>
@@ -476,6 +491,7 @@ export function ChatTab() {
     const [input, setInput] = useState("")
     const [myId, setMyId] = useState<number | null>(null)
     const [showPlanner, setShowPlanner] = useState(false)
+    const [isConnected, setIsConnected] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
     const socketRef = useRef<WebSocket | null>(null)
 
@@ -484,11 +500,8 @@ export function ChatTab() {
             const token = localStorage.getItem("token");
             if(token) {
                 try {
-                    const userRes = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
-                    if (userRes.ok) {
-                        const userData = await userRes.json();
-                        setMyId(userData.id);
-                    }
+                    const res = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
+                    if (res.ok) setMyId((await res.json()).id);
                 } catch(e) {}
             }
             fetchRooms();
@@ -531,16 +544,14 @@ export function ChatTab() {
             const wsUrl = `${WS_URL}/api/ws/${activeRoom.id}?token=${token}`;
             const ws = new WebSocket(wsUrl);
 
-            ws.onopen = () => console.log("🔌 Connected to Chat Room");
-            
+            ws.onopen = () => { setIsConnected(true); console.log("Connected"); };
             ws.onmessage = (event) => {
                 const newMsg = JSON.parse(event.data);
                 setMessages(prev => [...prev, newMsg]);
-                // 스크롤 아래로
+                // 🌟 메시지 수신 시 스크롤
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
             };
-
-            ws.onclose = () => console.log("🔌 Disconnected");
+            ws.onclose = () => { setIsConnected(false); setTimeout(() => { if (view === 'room' && activeRoom) ws.close(); }, 3000); };
             socketRef.current = ws;
 
             return () => {
@@ -571,9 +582,7 @@ export function ChatTab() {
     };
 
     const handleSend = async () => {
-        if (!input.trim() || !activeRoom || !socketRef.current) return
-        
-        // WebSocket으로 전송
+        if (!input.trim() || !activeRoom || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return
         socketRef.current.send(input);
         setInput("");
     }
@@ -608,7 +617,7 @@ export function ChatTab() {
                     <Button variant="ghost" size="icon" onClick={() => setView('list')} className="-ml-2 h-9 w-9"><ArrowLeft className="w-5 h-5 text-gray-600" /></Button>
                     <div>
                         <h2 className="font-bold text-sm text-gray-900 truncate max-w-[150px]">{activeRoom?.name}</h2>
-                        <span className="text-[10px] text-green-500 font-bold block">● 실시간 연결됨</span>
+                        {isConnected ? <span className="text-[10px] text-green-500 font-bold block">● 실시간 연결됨</span> : <span className="text-[10px] text-red-500 font-bold block">● 연결 중...</span>}
                     </div>
                 </div>
                 
@@ -651,31 +660,33 @@ export function ChatTab() {
                         const isMe = msg.user_id === myId;
                         let content = null;
                         try {
-                            const json = JSON.parse(msg.content);
-                            // 🌟 [수정] 시스템 메시지 타입(system) 렌더링 추가
-                            if (json.type === "vote_card") {
-                                content = <VoteCard data={json} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
-                            } else if (json.type === "system") {
+                            const jsonContent = JSON.parse(msg.content);
+                            // 🌟 시스템 메시지 처리
+                            if (jsonContent.type === "vote_card") {
+                                content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
+                            } else if (jsonContent.type === "system") {
                                 return (
                                     <div key={i} className="flex justify-center my-2">
-                                        <div className="bg-gray-100 text-gray-500 text-[11px] px-3 py-1 rounded-full shadow-sm">
-                                            {json.text}
+                                        <div className="bg-gray-100 text-gray-500 text-[11px] px-3 py-1 rounded-full shadow-sm flex items-center gap-1">
+                                            {jsonContent.text.includes("분석") && <Loader2 className="w-3 h-3 animate-spin"/>}
+                                            {jsonContent.text}
                                         </div>
                                     </div>
                                 )
-                            } else if (json.text) {
-                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{json.text}</div>
+                            } else if (jsonContent.text) {
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>;
                             } else {
-                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>;
                             }
                         } catch {
-                            content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>
+                            content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>;
                         }
+                        
                         return (
                             <div key={i} className={`flex gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                {!isMe && <Avatar className="w-8 h-8 border border-white shadow-sm"><AvatarFallback className="text-[10px] bg-gray-100">{msg.name?.[0]}</AvatarFallback></Avatar>}
+                                {!isMe && msg.user_id !== 0 && <Avatar className="w-8 h-8 border border-white shadow-sm"><AvatarFallback className="text-[10px] bg-gray-100">{msg.name?.[0]}</AvatarFallback></Avatar>}
                                 <div className="max-w-[85%] flex flex-col items-start">
-                                    {!isMe && <div className="text-[10px] text-gray-500 mb-1 ml-1">{msg.name}</div>}
+                                    {!isMe && msg.user_id !== 0 && <div className="text-[10px] text-gray-500 mb-1 ml-1">{msg.name}</div>}
                                     {content}
                                     <div className={`text-[9px] text-gray-300 mt-1 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{msg.timestamp}</div>
                                 </div>

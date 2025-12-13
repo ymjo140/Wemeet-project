@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, JSON, UniqueConstraint, ARRAY
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -29,7 +29,7 @@ class Place(Base):
     name = Column(String, index=True, nullable=False)
     category = Column(String) # restaurant, cafe, workspace
     
-    # 2. 📍 Location Info (Key to preventing duplicates)
+    # 2. 🌟 Location Info (Key to preventing duplicates)
     address = Column(String, nullable=True) # Road name address
     lat = Column(Float, nullable=False)     # Latitude
     lng = Column(Float, nullable=False)     # Longitude
@@ -73,8 +73,11 @@ class User(Base):
     
     avatar = Column(String)
     manner = Column(Float, default=36.5)
-    lat = Column(Float, default=37.566)
-    lng = Column(Float, default=126.978)
+    
+    # 🌟 [위치 저장 기능] 사용자가 설정한 위치 (DB 저장)
+    lat = Column(Float, default=37.5665) # 초기값: 시청 (설정 전)
+    lng = Column(Float, default=126.9780)
+    location_name = Column(String, nullable=True) # 예: "우리집", "서울 중구 신당동"
     
     preferences = Column(JSON, default={"tag_weights": {}, "avg_spend": 20000}) 
     preference_vector = Column(JSON, default={}) 
@@ -133,7 +136,7 @@ class ChatRoomMember(Base):
     __tablename__ = "chat_room_members"
     
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(String, ForeignKey("chat_rooms.id"))
+    room_id = Column(String, index=True) # ForeignKey 제거하고 String으로 관리 (UUID 호환)
     user_id = Column(Integer, ForeignKey("users.id"))
     joined_at = Column(DateTime, default=datetime.now)
     
@@ -144,7 +147,7 @@ class ChatRoomMember(Base):
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(String, index=True) # Note: Currently managed as String in logic, might need migration to Integer ForeignKey later if strictly relational
+    room_id = Column(String, index=True) # Note: Currently managed as String in logic
     user_id = Column(Integer, ForeignKey("users.id"))
     content = Column(String)
     timestamp = Column(DateTime, default=datetime.now)

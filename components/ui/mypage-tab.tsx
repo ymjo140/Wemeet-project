@@ -13,13 +13,13 @@ import { Slider } from "@/components/ui/slider"
 import { 
     Settings, Bell, LogOut, Palette, Coins, ShoppingBag, 
     Heart, Star, MessageSquare, Pencil, Check, X, Utensils, 
-    ChevronRight, MapPin 
+    ChevronRight, MapPin, Search, Loader2 
 } from "lucide-react"
 
-// 🌟 취향 조사 모달 import
+// 🌟 취향 조사 모달 import (경로 확인 필요)
 import { PreferenceModal } from "@/components/ui/preference-modal"
 
-// --- 상수 및 타입 정의 (기존 로직 유지) ---
+// --- 상수 및 타입 정의 ---
 const CATEGORIES = [
   { id: "hair", label: "헤어", icon: "💇" },
   { id: "eyes", label: "눈", icon: "👀" },
@@ -33,10 +33,72 @@ const CATEGORIES = [
 interface AvatarItem { id: string; category: string; name: string; image_url: string; price_coin: number; }
 interface UserInfo { 
     id: number; name: string; email: string; wallet_balance: number; 
+    location_name?: string; lat?: number; lng?: number; // 🌟 위치 정보 필드 추가
     avatar: { level: number; equipped: Record<string, string | null>; inventory: string[]; }; 
     favorites: { id: number; name: string; category?: string; address?: string }[]; 
     reviews: any[]; 
     preferences?: any;
+}
+
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
+
+// 🌟 [신규] 장소 검색 컴포넌트 (배민 스타일 위치 설정용)
+function LocationSearch({ onSelect }: { onSelect: (place: any) => void }) {
+    const [query, setQuery] = useState("");
+    const [results, setResults] = useState<any[]>([]);
+    const [searching, setSearching] = useState(false);
+
+    useEffect(() => {
+        if (query.length < 2) { setResults([]); return; }
+        const t = setTimeout(async () => {
+            setSearching(true);
+            try {
+                // 실제 백엔드 API (없으면 더미 데이터 반환하도록 try-catch 처리)
+                const res = await fetch(`${API_URL}/api/places/search?query=${query}`);
+                if (res.ok) {
+                    setResults(await res.json());
+                } else {
+                    // 🌟 백엔드 검색 API 미구현 시 테스트용 더미 데이터
+                    setResults([
+                        { title: `${query} (검색결과)`, address: "서울시 중구 세종대로 110", lat: 37.5665, lng: 126.9780 },
+                        { title: "강남역", address: "서울시 강남구 강남대로 396", lat: 37.4980, lng: 127.0276 }
+                    ]);
+                }
+            } catch (e) {
+                // 에러 발생 시 테스트용 더미 데이터
+                setResults([
+                    { title: `${query} (검색결과)`, address: "서울시 중구 세종대로 110", lat: 37.5665, lng: 126.9780 },
+                    { title: "강남역", address: "서울시 강남구 강남대로 396", lat: 37.4980, lng: 127.0276 }
+                ]);
+            } finally { setSearching(false); }
+        }, 500);
+        return () => clearTimeout(t);
+    }, [query]);
+
+    return (
+        <div className="relative w-full">
+            <div className="flex items-center border rounded-xl px-3 bg-gray-50 focus-within:border-[#7C3AED] focus-within:ring-1 focus-within:ring-[#7C3AED]/20 transition-all">
+                <Search className="w-4 h-4 text-gray-400 mr-2"/>
+                <Input 
+                    value={query} 
+                    onChange={e => setQuery(e.target.value)} 
+                    placeholder="동명(읍/면) 또는 도로명 주소 검색" 
+                    className="border-none bg-transparent h-10 text-sm focus-visible:ring-0 placeholder:text-gray-400"
+                />
+                {searching && <Loader2 className="w-3 h-3 animate-spin text-gray-400"/>}
+            </div>
+            {results.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-white border rounded-xl shadow-lg mt-2 z-50 max-h-48 overflow-y-auto">
+                    {results.map((place, i) => (
+                        <div key={i} onClick={() => { onSelect(place); setQuery(""); setResults([]); }} className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-0 transition-colors">
+                            <div className="font-bold text-sm text-gray-800">{place.title}</div>
+                            <div className="text-xs text-gray-500">{place.address}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
 }
 
 export function MyPageTab() {
@@ -60,6 +122,10 @@ export function MyPageTab() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState("");
 
+  // 🌟 위치 설정 관련 State
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [locLoading, setLocLoading] = useState(false);
+
   // 취향 조사 모달 상태
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
@@ -68,7 +134,7 @@ export function MyPageTab() {
       const token = localStorage.getItem("token");
       if (!token) { setIsGuest(true); return; }
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", { headers: { "Authorization": `Bearer ${token}` } });
+          const res = await fetch(`${API_URL}/api/users/me`, { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) {
               const data = await res.json();
               setUser(data);
@@ -84,7 +150,7 @@ export function MyPageTab() {
   };
 
   const fetchShopItems = async () => {
-      try { const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/shop/items"); if (res.ok) setShopItems(await res.json()); } catch (e) {}
+      try { const res = await fetch(`${API_URL}/api/shop/items`); if (res.ok) setShopItems(await res.json()); } catch (e) {}
   };
 
   useEffect(() => { fetchMyInfo(); }, []);
@@ -96,7 +162,7 @@ export function MyPageTab() {
       if (user.wallet_balance < item.price_coin) { alert("코인이 부족합니다! 열심히 활동해서 모아보세요."); return; }
       if (confirm(`${item.name}을(를) ${item.price_coin}코인에 구매하시겠습니까?`)) {
           const token = localStorage.getItem("token");
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/shop/buy", {
+          const res = await fetch(`${API_URL}/api/shop/buy`, {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ item_id: item.id })
           });
           if (res.ok) { alert("구매 완료! 인벤토리에서 확인하세요."); fetchMyInfo(); }
@@ -105,7 +171,7 @@ export function MyPageTab() {
 
   const handleEquip = async (item: AvatarItem) => {
       const token = localStorage.getItem("token");
-      const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/avatar/equip", {
+      const res = await fetch(`${API_URL}/api/avatar/equip`, {
           method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ category: item.category, item_id: item.id })
       });
       if (res.ok) { const data = await res.json(); setPreviewEquipped(data.equipped); fetchMyInfo(); }
@@ -121,7 +187,7 @@ export function MyPageTab() {
           comment: reviewText, tags: targetPlace.tags || []
       };
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/reviews", {
+          const res = await fetch(`${API_URL}/api/reviews`, {
               method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload)
           });
           if (res.ok) { alert("소중한 리뷰가 등록되었습니다!"); setIsReviewOpen(false); setScores({ taste: 3, service: 3, price: 3, vibe: 3 }); setReviewText(""); fetchMyInfo(); }
@@ -132,7 +198,7 @@ export function MyPageTab() {
       if (!newName.trim()) return;
       const token = localStorage.getItem("token");
       try {
-          const res = await fetch("https://wemeet-backend-xqlo.onrender.com/api/users/me", {
+          const res = await fetch(`${API_URL}/api/users/me`, {
               method: "PUT", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ name: newName })
           });
           if (res.ok) {
@@ -141,6 +207,31 @@ export function MyPageTab() {
               setIsEditingName(false);
           }
       } catch (e) { alert("변경 실패"); }
+  };
+
+  // 🌟 [신규] 위치 저장 핸들러
+  const handleSaveLocation = async (place: any) => {
+      if (!confirm(`'${place.title}'을(를) 내 위치로 설정하시겠습니까?`)) return;
+      setLocLoading(true);
+      try {
+          const token = localStorage.getItem("token");
+          const res = await fetch(`${API_URL}/api/users/me/location`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({
+                  location_name: place.title,
+                  lat: place.lat,
+                  lng: place.lng
+              })
+          });
+          if (res.ok) {
+              const updated = await res.json();
+              setUser((prev: any) => ({ ...prev, location_name: updated.user.location, lat: place.lat, lng: place.lng }));
+              alert("📍 위치가 저장되었습니다! 이제 이 위치를 기준으로 모임을 추천받습니다.");
+              setIsLocationModalOpen(false);
+          }
+      } catch (e) { alert("저장 실패"); }
+      finally { setLocLoading(false); }
   };
 
   const currentItems = activeTab === "shop" ? shopItems.filter(i => i.category === activeCategory) : shopItems.filter(i => i.category === activeCategory && user?.avatar?.inventory?.includes(i.id));
@@ -225,8 +316,22 @@ export function MyPageTab() {
                     </div>
                 </div>
 
+                {/* 🌟 위치 설정 버튼 (배달앱 스타일) */}
+                <div className="mt-6">
+                    <button onClick={() => setIsLocationModalOpen(true)} className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl p-3 flex items-center justify-between text-white transition-all">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-white/20 p-1.5 rounded-full"><MapPin className="w-4 h-4"/></div>
+                            <div className="text-left">
+                                <div className="text-[10px] opacity-80">내 동네 설정</div>
+                                <div className="text-sm font-bold">{user.location_name || "위치 설정하기"}</div>
+                            </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 opacity-70"/>
+                    </button>
+                </div>
+
                 {/* 하단 액션 버튼들 */}
-                <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="mt-3 grid grid-cols-2 gap-3">
                     <Button className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-md h-12 rounded-xl text-sm font-medium transition-all" onClick={() => setIsEditorOpen(true)}>
                         <Palette className="w-4 h-4 mr-2" /> 아바타 꾸미기
                     </Button>
@@ -351,7 +456,18 @@ export function MyPageTab() {
         </div>
       </div>
 
-      {/* 4. 아바타 꾸미기 모달 (기존 로직 + 디자인 적용) */}
+      {/* 🌟 4. 위치 설정 모달 */}
+      <Dialog open={isLocationModalOpen} onOpenChange={setIsLocationModalOpen}>
+          <DialogContent className="sm:max-w-md rounded-3xl">
+              <DialogHeader><DialogTitle>내 동네 설정</DialogTitle><DialogDescription>만날 장소를 추천받을 기준 위치를 설정해주세요.</DialogDescription></DialogHeader>
+              <div className="py-4">
+                  <LocationSearch onSelect={handleSaveLocation} />
+                  {locLoading && <div className="mt-4 text-center text-xs text-gray-400 flex justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> 저장 중...</div>}
+              </div>
+          </DialogContent>
+      </Dialog>
+
+      {/* 5. 아바타 꾸미기 모달 (기존 로직 + 디자인 적용) */}
       <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
         <DialogContent className="sm:max-w-md h-[85vh] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl border-0 font-['Pretendard']">
             <DialogHeader className="px-6 pt-5 pb-3 bg-white border-b border-gray-100 flex-shrink-0">
@@ -421,7 +537,7 @@ export function MyPageTab() {
         </DialogContent>
       </Dialog>
 
-      {/* 5. 리뷰 작성 모달 */}
+      {/* 6. 리뷰 작성 모달 */}
       <Dialog open={isReviewOpen} onOpenChange={setIsReviewOpen}>
           <DialogContent className="sm:max-w-sm rounded-3xl font-['Pretendard']">
               <DialogHeader>
@@ -467,7 +583,7 @@ export function MyPageTab() {
           </DialogContent>
       </Dialog>
 
-      {/* 6. 취향 모달 (컴포넌트) */}
+      {/* 7. 취향 모달 (컴포넌트) */}
       <PreferenceModal 
           isOpen={isPreferenceModalOpen} 
           onClose={() => setIsPreferenceModalOpen(false)} 

@@ -32,31 +32,34 @@ def get_db():
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
-        # 🌟 [긴급 DB 패치] room_id 컬럼 타입을 Integer -> String으로 강제 변경
+        # 🌟 [DB 자동 패치] 컬럼 마이그레이션
         try:
             db.execute(text("ALTER TABLE chat_room_members ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
-            print("✅ DB Fix: chat_room_members.room_id converted to VARCHAR")
-        except Exception:
-            db.rollback() 
+            print("✅ DB Fix: chat_room_members.room_id -> VARCHAR")
+        except Exception: db.rollback() 
             
         try:
             db.execute(text("ALTER TABLE messages ALTER COLUMN room_id TYPE VARCHAR USING room_id::varchar"))
-            print("✅ DB Fix: messages.room_id converted to VARCHAR")
-        except Exception:
-            db.rollback()
+            print("✅ DB Fix: messages.room_id -> VARCHAR")
+        except Exception: db.rollback()
+
+        # 🌟 [위치 정보 컬럼 추가]
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN location_name VARCHAR DEFAULT '서울 시청'"))
+            print("✅ DB Update: location_name added")
+        except Exception: db.rollback()
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR DEFAULT 'unknown'"))
-        except Exception:
-            db.rollback() 
+        except Exception: db.rollback() 
 
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN age_group VARCHAR DEFAULT '20s'"))
-        except Exception:
-            db.rollback() 
+        except Exception: db.rollback() 
         
         db.commit()
 
+        # 데이터 초기화
         if db.query(models.AvatarItem).count() == 0:
             print("🛍️ [초기화] 아바타 아이템 주입...")
             items = [
@@ -140,7 +143,7 @@ def join_community(room_id: str, db: Session = Depends(get_db), current_user: mo
     db.commit()
     return {"message": "Joined successfully"}
 
-# 🌟 [핵심 수정] 일정 조회 API - 14일치 무조건 반환
+# 🌟 일정 조회 API
 @app.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
     room_members = db.query(models.ChatRoomMember).filter(

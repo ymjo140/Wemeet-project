@@ -22,9 +22,14 @@ class ReviewCreate(BaseModel):
     score_taste: int; score_service: int; score_price: int; score_vibe: int
     comment: Optional[str] = None; reason: Optional[str] = None
 class FavoriteRequest(BaseModel): place_id: int; place_name: str
-# 🌟 [신규] 친구 관련 모델
 class FriendRequest(BaseModel): email: str
 class FriendAccept(BaseModel): request_id: int
+
+# 🌟 [신규] 위치 업데이트 모델
+class LocationUpdate(BaseModel):
+    location_name: str
+    lat: float
+    lng: float
 
 # --- User Info API ---
 @router.get("/api/users/me")
@@ -36,9 +41,21 @@ def get_my_info(current_user: models.User = Depends(get_current_user), db: Sessi
     
     return {
         "id": current_user.id, "name": current_user.name, "email": current_user.email,
-        "preferences": current_user.preferences, "location": {"lat": current_user.lat, "lng": current_user.lng},
+        "preferences": current_user.preferences, 
+        "location": {"lat": current_user.lat, "lng": current_user.lng},
+        "location_name": current_user.location_name, # 🌟 추가
         "wallet_balance": current_user.wallet_balance, "avatar": avatar_data, "favorites": current_user.favorites, "reviews": my_reviews
     }
+
+# 🌟 [신규] 내 위치 업데이트 API
+@router.put("/api/users/me/location")
+def update_user_location(req: LocationUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.location_name = req.location_name
+    current_user.lat = req.lat
+    current_user.lng = req.lng
+    db.commit()
+    db.refresh(current_user)
+    return {"message": "Location updated", "user": {"name": current_user.name, "location": current_user.location_name}}
 
 @router.put("/api/users/me")
 def update_profile(req: UserProfileUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -74,10 +91,9 @@ def equip_item(req: EquipRequest, current_user: models.User = Depends(get_curren
     avatar.equipped = equipped; flag_modified(avatar, "equipped"); db.commit()
     return {"message": "장착 완료", "equipped": equipped}
 
-# --- Friends API (신규) ---
+# --- Friends API ---
 @router.get("/api/friends")
 def get_friends(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # 1. 이미 친구인 목록 (Accepted)
     friends_query = db.query(models.Friendship).filter(
         (models.Friendship.requester_id == current_user.id) | (models.Friendship.receiver_id == current_user.id),
         models.Friendship.status == "accepted"
@@ -88,7 +104,6 @@ def get_friends(current_user: models.User = Depends(get_current_user), db: Sessi
         friend_id = f.receiver_id if f.requester_id == current_user.id else f.requester_id
         friend_user = db.query(models.User).filter(models.User.id == friend_id).first()
         if friend_user:
-            # 친구 아바타 정보
             f_avatar = db.query(models.UserAvatar).filter(models.UserAvatar.user_id == friend_user.id).first()
             equipped = f_avatar.equipped if f_avatar else {}
             friends.append({
@@ -97,7 +112,6 @@ def get_friends(current_user: models.User = Depends(get_current_user), db: Sessi
                 "avatar": {"equipped": equipped}
             })
 
-    # 2. 받은 요청 목록 (Pending)
     requests_query = db.query(models.Friendship).filter(
         models.Friendship.receiver_id == current_user.id,
         models.Friendship.status == "pending"
@@ -134,7 +148,6 @@ def request_friend(req: FriendRequest, current_user: models.User = Depends(get_c
 def accept_friend(req: FriendAccept, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     friendship = db.query(models.Friendship).filter(models.Friendship.id == req.request_id, models.Friendship.receiver_id == current_user.id).first()
     if not friendship: raise HTTPException(404, "요청을 찾을 수 없습니다.")
-    
     friendship.status = "accepted"
     db.commit()
     return {"message": "친구 수락 완료"}
