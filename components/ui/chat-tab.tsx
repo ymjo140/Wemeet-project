@@ -37,12 +37,13 @@ const AI_FILTER_OPTIONS: Record<string, any> = {
 
 // 날짜 포맷팅 헬퍼
 const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
     const d = new Date(dateStr);
     const days = ["일", "월", "화", "수", "목", "금", "토"];
     return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
 };
 
-// 🌟 [핵심] 투표 및 확정 카드 컴포넌트
+// 🌟 [VoteCard] 투표 및 확정 기능 API 연동 완료
 const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId: number, roomId: string, onRefresh: () => void }) => {
     const [votes, setVotes] = useState(data.vote_count || 0);
     const [voted, setVoted] = useState(false);
@@ -60,7 +61,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    room_id: String(roomId), // 문자열 변환 보장
+                    room_id: String(roomId), 
                     message_id: messageId 
                 })
             });
@@ -86,14 +87,14 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    room_id: String(roomId), // 문자열 변환 보장
+                    room_id: String(roomId),
                     place_name: data.place.name,
-                    date: data.date || "2023-12-25", 
-                    time: data.time || "19:00",     
+                    date: data.date, 
+                    time: data.time,     
                     category: data.place.category
                 })
             });
-            onRefresh(); // 목록 갱신
+            onRefresh(); 
         } catch (e) {
             alert("확정 처리 중 오류가 발생했습니다.");
         } finally {
@@ -148,9 +149,9 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
     )
 }
 
-// 🌟 AI 모임 매니저 (설정 패널)
+// 🌟 [MeetingPlanner] UI 전체 유지 + 백그라운드 요청 로직 적용
 const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, myId: number | null, onClose: () => void, onRefresh: () => void }) => {
-    const [activeTab, setActiveTab] = useState("recommend") // recommend | schedule
+    const [activeTab, setActiveTab] = useState("recommend") 
     
     // -- 장소 추천 State --
     const [recLoading, setRecLoading] = useState(false)
@@ -159,7 +160,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     const [selectedPurpose, setSelectedPurpose] = useState("식사");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-    // -- 일정 추천 State (New) --
+    // -- 일정 추천 State --
     const [recommendedDates, setRecommendedDates] = useState<any[]>([]);
     const [showAllDates, setShowAllDates] = useState(false);
     const [selectedDateSlot, setSelectedDateSlot] = useState<any>(null);
@@ -195,7 +196,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
         else setSelectedTags(prev => [...prev, tag]);
     };
 
-    // 1. 장소 추천 요청
+    // 1. 장소 추천 요청 (백그라운드 처리)
     const handlePlan = async () => {
         setRecLoading(true)
         try {
@@ -224,7 +225,8 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 }
             }
 
-            const res = await fetch(`${API_URL}/api/meeting-flow`, {
+            // 요청만 보내고 결과는 소켓으로 받음 (await 없이 fetch)
+            fetch(`${API_URL}/api/meeting-flow`, {
                 method: "POST",
                 headers: { 
                     "Content-Type": "application/json",
@@ -233,13 +235,9 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 body: JSON.stringify(payload)
             })
 
-            if(res.ok) {
-                // 🌟 alert 제거하고 즉시 새로고침
-                onRefresh(); 
-                onClose();
-            } else {
-                alert("추천 실패. 다시 시도해주세요.");
-            }
+            // 즉시 닫기 (백그라운드 진행 알림은 소켓으로 옴)
+            onClose();
+
         } catch (e) { console.error(e); alert("오류 발생"); } 
         finally { setRecLoading(false) }
     }
@@ -299,7 +297,6 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     }
 
     const currentOptions = AI_FILTER_OPTIONS[selectedPurpose];
-    // 최대 3개만 보여주고 더보기 버튼으로 확장
     const visibleDates = showAllDates ? recommendedDates : recommendedDates.slice(0, 3);
 
     return (
@@ -470,6 +467,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
     )
 }
 
+// 🌟 [ChatTab] 메인 컴포넌트
 export function ChatTab() {
     const [view, setView] = useState<'list' | 'room'>('list')
     const [rooms, setRooms] = useState<any[]>([])
@@ -508,7 +506,6 @@ export function ChatTab() {
         } catch(e) {}
     }
 
-    // 🌟 메시지 로드 함수
     const fetchMessages = async () => {
         if (!activeRoom) return;
         const token = localStorage.getItem("token");
@@ -518,7 +515,6 @@ export function ChatTab() {
             });
             if (res.ok) {
                 setMessages(await res.json());
-                // 스크롤 아래로
                 setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
             }
         } catch(e) {}
@@ -652,15 +648,23 @@ export function ChatTab() {
                     )}
 
                     {messages.map((msg, i) => {
-                        const isMe = msg.user_id === myId
-                        let content = null
+                        const isMe = msg.user_id === myId;
+                        let content = null;
                         try {
-                            const jsonContent = JSON.parse(msg.content)
-                            // 🌟 [핵심] 투표 카드 렌더링 (messageId와 onRefresh 전달)
-                            if (jsonContent.type === "vote_card") {
-                                content = <VoteCard data={jsonContent} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
-                            } else if (jsonContent.text) {
-                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{jsonContent.text}</div>
+                            const json = JSON.parse(msg.content);
+                            // 🌟 [수정] 시스템 메시지 타입(system) 렌더링 추가
+                            if (json.type === "vote_card") {
+                                content = <VoteCard data={json} messageId={msg.id} roomId={activeRoom.id} onRefresh={fetchMessages} />
+                            } else if (json.type === "system") {
+                                return (
+                                    <div key={i} className="flex justify-center my-2">
+                                        <div className="bg-gray-100 text-gray-500 text-[11px] px-3 py-1 rounded-full shadow-sm">
+                                            {json.text}
+                                        </div>
+                                    </div>
+                                )
+                            } else if (json.text) {
+                                content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{json.text}</div>
                             } else {
                                 content = <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-[#7C3AED] text-white rounded-tr-none' : 'bg-white text-gray-800 border rounded-tl-none'}`}>{msg.content}</div>
                             }
@@ -670,7 +674,7 @@ export function ChatTab() {
                         return (
                             <div key={i} className={`flex gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                 {!isMe && <Avatar className="w-8 h-8 border border-white shadow-sm"><AvatarFallback className="text-[10px] bg-gray-100">{msg.name?.[0]}</AvatarFallback></Avatar>}
-                                <div className="max-w-[75%] flex flex-col items-start">
+                                <div className="max-w-[85%] flex flex-col items-start">
                                     {!isMe && <div className="text-[10px] text-gray-500 mb-1 ml-1">{msg.name}</div>}
                                     {content}
                                     <div className={`text-[9px] text-gray-300 mt-1 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{msg.timestamp}</div>

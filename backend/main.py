@@ -10,17 +10,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-# 👇 [필수] Session과 text 임포트
 from sqlalchemy.orm import Session
 from sqlalchemy import text 
 from database import engine, SessionLocal
 import models
 from routers import auth, users, meetings, community, sync, coins
-# 👇 [필수] get_current_user 추가
 from dependencies import get_password_hash, get_current_user
 from analytics import DemandIntelligenceEngine
 
-# DB 테이블 생성 (없으면 생성)
+# DB 테이블 생성
 models.Base.metadata.create_all(bind=engine)
 
 def get_db():
@@ -47,7 +45,6 @@ async def lifespan(app: FastAPI):
         except Exception:
             db.rollback()
 
-        # 기존 마이그레이션
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR DEFAULT 'unknown'"))
         except Exception:
@@ -60,7 +57,6 @@ async def lifespan(app: FastAPI):
         
         db.commit()
 
-        # --- 기존 데이터 초기화 로직 ---
         if db.query(models.AvatarItem).count() == 0:
             print("🛍️ [초기화] 아바타 아이템 주입...")
             items = [
@@ -117,7 +113,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 라우터 연결
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(meetings.router)
@@ -129,7 +124,7 @@ app.include_router(coins.router)
 def read_root():
     return {"status": "WeMeet API Running 🚀"}
 
-# 🌟 [수정됨] room_id: str (UUID 호환)
+# 🌟 채팅방 참여 API
 @app.post("/api/communities/{room_id}/join")
 def join_community(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     existing = db.query(models.ChatRoomMember).filter(
@@ -145,62 +140,48 @@ def join_community(room_id: str, db: Session = Depends(get_db), current_user: mo
     db.commit()
     return {"message": "Joined successfully"}
 
-# 🌟 [수정됨] 일정 조회 API (14일치 무조건 반환)
+# 🌟 [핵심 수정] 일정 조회 API - 14일치 무조건 반환
 @app.get("/api/chat/rooms/{room_id}/available-dates")
 def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
-    """
-    채팅방(room_id)의 실제 멤버들을 조회하고, 
-    그 멤버들의 캘린더 일정을 분석하여 겹치지 않는 시간을 추천합니다.
-    """
     room_members = db.query(models.ChatRoomMember).filter(
         models.ChatRoomMember.room_id == room_id
     ).all()
     
-    # 멤버가 없으면 빈 리스트(member_ids=[])로 처리하여 "모두 가능"으로 유도
     member_ids = [m.user_id for m in room_members]
-
-    # 2. 분석 시작
     today = datetime.now().date()
-    analysis_period = [today + timedelta(days=i) for i in range(14)]
-    
     recommended_slots = []
 
-    for date_obj in analysis_period:
-        date_str = date_obj.strftime("%Y-%m-%d")
-        day_of_week = date_obj.weekday()
+    for i in range(14):
+        target_date = today + timedelta(days=i)
+        date_str = target_date.strftime("%Y-%m-%d")
+        day_of_week = target_date.weekday()
         
         base_score = 90 if day_of_week >= 5 else 70 
         
-        # 3. 멤버들의 해당 날짜 약속 조회
-        conflicting_events = []
+        conflicts = 0
         if member_ids:
-            conflicting_events = db.query(models.Event).filter(
-                models.Event.user_id.in_(member_ids),
+            events = db.query(models.Event).filter(
+                models.Event.user_id.in_(member_ids), 
                 models.Event.date == date_str
             ).all()
+            
+            for e in events:
+                try:
+                    h = int(e.time.split(":")[0])
+                    if 18 <= h <= 21: conflicts += 1
+                except: pass
 
-        # 4. 시간대 충돌 분석 (저녁 18~21시 기준)
-        conflict_count = 0
-        for event in conflicting_events:
-            try:
-                event_hour = int(event.time.split(":")[0])
-                if 18 <= event_hour <= 21:
-                    conflict_count += 1
-            except:
-                pass
-
-        # 5. 점수 계산
-        if conflict_count == 0:
-            final_score = base_score + 10
+        final_score = base_score - (conflicts * 30)
+        
+        if conflicts == 0: 
             label = "🔥 모두 가능"
-        else:
-            final_score = base_score - (conflict_count * 30)
-            label = f"{conflict_count}명 일정 있음"
+            final_score += 10 
+        else: 
+            label = f"{conflicts}명 불가능"
 
-        # 점수가 낮아도 표시를 위해 리스트에 추가 (단, 0점 이하는 제외 가능)
         recommended_slots.append({
             "fullDate": date_str,
-            "displayDate": f"{date_obj.month}/{date_obj.day} ({['월','화','수','목','금','토','일'][day_of_week]})",
+            "displayDate": f"{target_date.month}/{target_date.day} ({['월','화','수','목','금','토','일'][day_of_week]})",
             "time": "19:00",
             "label": label,
             "score": final_score
