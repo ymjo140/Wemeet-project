@@ -60,7 +60,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    room_id: Number(roomId),
+                    room_id: String(roomId),
                     message_id: messageId 
                 })
             });
@@ -86,7 +86,7 @@ const VoteCard = ({ data, messageId, roomId, onRefresh }: { data: any, messageId
                     ...(token && { "Authorization": `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    room_id: Number(roomId),
+                    room_id: String(roomId),
                     place_name: data.place.name,
                     date: data.date || "2023-12-25", 
                     time: data.time || "19:00",     
@@ -210,7 +210,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
             `.trim();
 
             const payload = {
-                room_id: Number(roomId),
+                room_id: String(roomId),
                 purpose: selectedPurpose, 
                 conditions: {
                     date: targetDate,
@@ -287,7 +287,7 @@ const MeetingPlanner = ({ roomId, myId, onClose, onRefresh }: { roomId: string, 
                 await fetch(`${API_URL}/api/chat/message`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...(token && { "Authorization": `Bearer ${token}` }) },
-                    body: JSON.stringify({ room_id: Number(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
+                    body: JSON.stringify({ room_id: String(roomId), content: `📅 [일정 등록됨] ${parsedSchedule.title} (${parsedSchedule.date} ${parsedSchedule.time})`, type: "text" })
                 });
                 
                 onRefresh();

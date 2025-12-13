@@ -120,7 +120,7 @@ def read_root():
 
 # 🌟 [신규] 채팅방 참여 API (참여 기록 남기기)
 @app.post("/api/communities/{room_id}/join")
-def join_community(room_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def join_community(room_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # 1. 이미 참여 중인지 확인
     existing = db.query(models.ChatRoomMember).filter(
         models.ChatRoomMember.room_id == room_id,
@@ -138,7 +138,7 @@ def join_community(room_id: int, db: Session = Depends(get_db), current_user: mo
 
 # 🌟 [신규] "진짜" 채팅방 멤버 일정 조회 API
 @app.get("/api/chat/rooms/{room_id}/available-dates")
-def get_available_dates_for_room(room_id: int, db: Session = Depends(get_db)):
+def get_available_dates_for_room(room_id: str, db: Session = Depends(get_db)):
     """
     채팅방(room_id)의 실제 멤버들을 조회하고, 
     그 멤버들의 캘린더 일정을 분석하여 겹치지 않는 시간을 추천합니다.
