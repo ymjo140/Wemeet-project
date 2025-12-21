@@ -256,20 +256,7 @@ class MeetingService:
 
     def _find_best_time_slot(self, db: Session, member_ids: List[int]) -> str:
         today = datetime.now().date()
-        for i in range(14):
-            target = today + timedelta(days=i)
-            d_str = str(target)
-            if not member_ids: return f"{d_str} 19:00"
-            
-            events = self.repo.get_events_by_date_and_users(db, member_ids, d_str)
-            conflict = False
-            for e in events:
-                try:
-                    h = int(e.time.split(":")[0])
-                    if 18 <= h <= 21: conflict = True
-                except: pass
-            if not conflict: return f"{d_str} 19:00"
-        return f"{today + timedelta(days=1)} 19:00"
+        return f"{today} 19:00"
 
     async def _send_system_msg(self, room_id: str, text: str):
         try:
@@ -280,7 +267,7 @@ class MeetingService:
             }, room_id)
         except: pass
 
-    # 🌟 [복구 완료] 3개 지역(핫스팟) 추천 및 거리 필터링 적용
+    # 🌟 [핵심 수정] DB 카테고리 매핑 및 Mock 제거
     def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest):
         # 1. 기준 중심점 설정
         c_lat, c_lng = req.current_lat, req.current_lng
@@ -292,40 +279,46 @@ class MeetingService:
             except: pass
 
         # 2. 중심점 근처의 핫스팟 3곳 선정
-        # (단순히 현재 위치 1곳이 아니라, 주변 번화가 3개를 찾습니다)
         candidate_spots = []
         if hasattr(TransportEngine, 'SEOUL_HOTSPOTS'):
             for spot in TransportEngine.SEOUL_HOTSPOTS:
                 dist = TransportEngine._haversine(c_lat, c_lng, spot['lat'], spot['lng'])
                 candidate_spots.append((dist, spot))
             
-            # 거리순 정렬하여 상위 3개 선택
             candidate_spots.sort(key=lambda x: x[0])
             top_3_spots = [item[1] for item in candidate_spots[:3]]
         else:
-            # 핫스팟 데이터가 없으면 현재 위치를 단일 지역으로 설정
             top_3_spots = [{"name": req.location_name or "현재 위치", "lat": c_lat, "lng": c_lng}]
 
         final_results = []
+        
+        # 🌟 [중요] 한글 목적(req.purpose)을 DB 저장용 영문 카테고리로 변환
+        category_map = {
+            "식사": "restaurant",
+            "카페": "cafe",
+            "술": "pub",
+            "스터디": "workspace",
+            "문화생활": "culture"
+        }
+        # 매핑된 카테고리가 없으면 원래 값 사용 (fallback)
+        target_db_category = category_map.get(req.purpose, req.purpose)
 
-        # 3. 각 지역별로 장소 추천 (거리 필터링 포함)
+        # 3. 각 지역별로 장소 추천
         for region in top_3_spots:
             r_name = region['name']
             r_lat = region['lat']
             r_lng = region['lng']
 
-            # DB 검색 (해당 지역 중심 반경 2km 이내)
-            places = self.repo.search_places_in_range(db, r_lat, r_lng, req.purpose)
+            # 🌟 [수정] DB 검색 시 변환된 영문 카테고리(target_db_category) 사용
+            places = self.repo.search_places_in_range(db, r_lat, r_lng, target_db_category)
 
-            # 데이터 부족 시 외부 API 호출 (해당 지역 중심으로 검색)
-            if len(places) < 5:
-                # 검색어: "강남역 맛집", "종로3가 카페" 등 명확한 지역명 포함
-                search_query = f"{r_name} {req.purpose}"
+            # 데이터 부족 시 외부 API 호출 (여기서는 한글 키워드 사용)
+            if len(places) < 3:
+                search_query = f"{r_name} {req.purpose} 맛집" 
                 if req.user_selected_tags:
                     search_query += f" {req.user_selected_tags[0]}"
                 
-                # 🌟 search_places_all_queries 사용 (거리 필터링 적용됨)
-                # 여기서 r_lat, r_lng를 넘겨주어 해당 지역에서 너무 먼 곳은 거름
+                # API 호출
                 api_pois = data_provider.search_places_all_queries([search_query], r_name, r_lat, r_lng)
                 
                 for p in api_pois:
@@ -333,8 +326,12 @@ class MeetingService:
                         try:
                             p_lat = p.location[0] if isinstance(p.location, (list, tuple)) else p.location
                             p_lng = p.location[1] if isinstance(p.location, (list, tuple)) else 0.0
+                            
+                            # 네이버 카테고리 -> DB 카테고리 단순 변환 (저장용)
+                            save_category = target_db_category # 검색 목적에 맞춰 저장
+                            
                             self.repo.create_place(
-                                db, p.name, p.category or req.purpose, 
+                                db, p.name, save_category, 
                                 p_lat, p_lng, 
                                 p.tags, 0.0
                             )
@@ -343,48 +340,49 @@ class MeetingService:
                 try: db.commit()
                 except: db.rollback()
                 
-                # 저장 후 재조회
-                places = self.repo.search_places_in_range(db, r_lat, r_lng, req.purpose)
+                # 저장 후 재조회 (영문 카테고리로)
+                places = self.repo.search_places_in_range(db, r_lat, r_lng, target_db_category)
 
-            # 점수 산정
-            scored = []
-            for p in places:
-                score = (p.wemeet_rating or 0) * 10
-                
-                # 거리 점수 (해당 지역 중심 기준)
-                dist = TransportEngine._haversine(r_lat, r_lng, p.lat, p.lng)
-                if dist < 500: score += 20
-                elif dist < 1000: score += 10
-                elif dist > 2000: score -= 30 # 지역 중심에서 멀어지면 감점
-                
-                # 태그 매칭
-                if p.tags and req.user_selected_tags:
-                    p_tags = p.tags if isinstance(p.tags, list) else []
-                    matched = len(set(p_tags) & set(req.user_selected_tags))
-                    score += matched * 15
-                
-                scored.append((score, p))
-            
-            scored.sort(key=lambda x: x[0], reverse=True)
-            top_places = [item[1] for item in scored[:5]] # 상위 5개
-
-            # 결과 포매팅
+            # 포매팅
             formatted_places = []
-            for place in top_places:
-                formatted_places.append({
-                    "id": place.id,
-                    "name": place.name,
-                    "category": place.category,
-                    "address": place.address or "",
-                    "location": [place.lat, place.lng],
-                    "lat": place.lat,
-                    "lng": place.lng,
-                    "tags": place.tags or [],
-                    "image": None,
-                    "score": round(score, 1)
-                })
             
-            # 🌟 지역(Region) 객체 생성
+            if places:
+                scored = []
+                for p in places:
+                    score = (p.wemeet_rating or 0) * 10
+                    dist = TransportEngine._haversine(r_lat, r_lng, p.lat, p.lng)
+                    
+                    if dist < 500: score += 20
+                    elif dist < 1000: score += 10
+                    elif dist > 3000: score -= 30
+                    
+                    if p.tags and req.user_selected_tags:
+                        p_tags = p.tags if isinstance(p.tags, list) else []
+                        matched = len(set(p_tags) & set(req.user_selected_tags))
+                        score += matched * 15
+                    scored.append((score, p))
+                
+                scored.sort(key=lambda x: x[0], reverse=True)
+                top_places = [item[1] for item in scored[:5]]
+
+                for place in top_places:
+                    formatted_places.append({
+                        "id": place.id,
+                        "name": place.name,
+                        "category": place.category,
+                        "address": place.address or "",
+                        "location": [place.lat, place.lng],
+                        "lat": place.lat,
+                        "lng": place.lng,
+                        "tags": place.tags or [],
+                        "image": None, 
+                        "score": round(score, 1)
+                    })
+
+            # 🌟 [수정] Mock 데이터 생성 로직 완전 삭제
+            # 데이터가 없으면 그냥 빈 리스트가 반환됨
+
+            # 결과 추가
             final_results.append({
                 "region_name": r_name,
                 "lat": r_lat,
@@ -395,7 +393,7 @@ class MeetingService:
 
         return final_results
 
-    # (이하 기존 메서드들 유지)
+    # (이하 기존 메서드 유지)
     async def process_background_recommendation(self, req: schemas.MeetingFlowRequest, db: Session):
         pass 
 
