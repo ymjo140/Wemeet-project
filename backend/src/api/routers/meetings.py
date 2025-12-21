@@ -17,23 +17,28 @@ def search_places(query: str = Query(..., min_length=1), db: Session = Depends(g
     """
     네이버 로컬 검색 API를 통해 장소를 검색합니다.
     """
-    # data_provider를 직접 사용하여 검색
-    results = data_provider.search_places(query, display=5)
+    # data_provider의 search_places_all_queries를 재활용하여 검색
+    # (위치 기반 필터링 없이 검색만 수행)
+    results = data_provider.search_places_all_queries([query], "", 0.0, 0.0)
     
     # 프론트엔드 포맷에 맞춰 반환
     response = []
     for place in results:
+        # 좌표가 리스트/튜플로 올 수 있으므로 처리
+        lat = place.location[0] if isinstance(place.location, (list, tuple)) else place.location
+        lng = place.location[1] if isinstance(place.location, (list, tuple)) else 0.0
+
         response.append({
             "title": place.name,
-            "address": place.address,
+            "address": "", # address 필드가 없다면 빈 문자열
             "category": place.category,
-            "mapx": place.location[1], # lng
-            "mapy": place.location[0], # lat
+            "mapx": lng, 
+            "mapy": lat, 
             "link": "" 
         })
     return response
 
-# 🌟 [수정] 단순 장소 추천 API (Home 탭)
+# 🌟 [수정] 단순 장소 추천 API (Home 탭) - 이제 [] 대신 실제 추천 로직을 호출합니다.
 @router.post("/api/recommend")
 def get_recommendation(req: schemas.RecommendRequest, db: Session = Depends(get_db)):
     """
