@@ -40,7 +40,7 @@ except ImportError:
         async def broadcast(self, m, r): pass
     manager = MockManager()
 
-# 🌟 [수정] 인자 없이 생성 (Data Provider 내부에서 settings 참조)
+# 데이터 제공자 초기화
 data_provider = RealDataProvider()
 
 class MeetingService:
@@ -73,13 +73,17 @@ class MeetingService:
             }, room_id)
         except: pass
 
+    # 🌟 [수정됨] 홈 탭용 단순 장소 추천 메서드 (프론트엔드 구조 맞춤)
     def get_recommendations_direct(self, db: Session, req: schemas.RecommendRequest):
         # 1. 중심 위치 설정
         c_lat, c_lng = req.current_lat, req.current_lng
+        location_desc = req.location_name or "중간지점"
+
         if req.manual_locations:
             try:
                 parts = req.manual_locations[0].split(',')
                 c_lat, c_lng = float(parts[0]), float(parts[1])
+                location_desc = "검색된 위치"
             except: pass
 
         # 2. DB 검색
@@ -87,11 +91,10 @@ class MeetingService:
 
         # 3. 외부 API 검색 (데이터 부족 시)
         if len(places) < 5:
-            search_query = f"{req.location_name or '주변'} {req.purpose}"
+            search_query = f"{location_desc} {req.purpose}"
             if req.user_selected_tags:
                 search_query += f" {req.user_selected_tags[0]}"
             
-            # 메서드 존재 여부 확인 후 호출
             if hasattr(data_provider, 'search_places'):
                 external_places = data_provider.search_places(search_query, display=10)
             else:
@@ -131,21 +134,30 @@ class MeetingService:
         scored.sort(key=lambda x: x[0], reverse=True)
         top_places = [item[1] for item in scored[:5]]
 
-        # 5. 포맷 변환
-        result = []
+        # 5. 프론트엔드 포맷 변환 (PlaceCard 및 지도 마커용 구조)
+        formatted_places = []
         for place in top_places:
-            result.append({
-                "place_id": place.id,
+            formatted_places.append({
+                "id": place.id,
                 "name": place.name,
                 "category": place.category,
                 "address": place.address or "",
+                "location": [place.lat, place.lng], # 🌟 프론트엔드 지도 호환 (배열)
                 "lat": place.lat,
                 "lng": place.lng,
                 "tags": place.tags or [],
                 "image": None,
-                "score": 0.0
+                "score": round(score, 1) # 점수 표시
             })
-        return result
+            
+        # 🌟 [핵심] 지역(Region) 단위로 감싸서 반환 (프론트엔드 탭 구조 대응)
+        return [{
+            "region_name": location_desc,
+            "lat": c_lat,
+            "lng": c_lng,
+            "places": formatted_places,
+            "transit_info": None
+        }]
 
     async def process_background_recommendation(self, req: schemas.MeetingFlowRequest, db: Session):
         try:
