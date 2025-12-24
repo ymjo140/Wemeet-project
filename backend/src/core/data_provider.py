@@ -36,7 +36,7 @@ class RealDataProvider:
                     item = data['addresses'][0]
                     return float(item['y']), float(item['x'])
         except Exception as e:
-            print(f"Geocoding Error ({query}): {e}")
+            print(f"Geocoding Error: {e}")
         return 0.0, 0.0
 
     def search_places_all_queries(self, queries: List[str], region_name: str, center_lat: float, center_lng: float, db: Session = None) -> List[PlaceInfo]:
@@ -49,64 +49,50 @@ class RealDataProvider:
         for q in queries:
             # 1. [DB 조회]
             if db:
-                # DB에서 넉넉하게 50개까지 찾아봄
-                db_places = repo.search_places_by_keyword(db, q) 
+                db_places = repo.search_places_by_keyword(db, q)
                 for p in db_places:
                     if p.name in seen_names: continue
                     
-                    if center_lat != 0.0 and ((p.lat - center_lat)**2 + (p.lng - center_lng)**2)**0.5 > 0.05:
-                        continue
+                    # 🌟 [수정] 거리 제한 해제 (DB 검색 시)
+                    # if center_lat != 0.0 and ((p.lat - center_lat)**2 + (p.lng - center_lng)**2)**0.5 > 0.05:
+                    #     continue
 
                     seen_names.add(p.name)
-                    results.append(PlaceInfo(
-                        name=p.name,
-                        category=p.category,
-                        location=[p.lat, p.lng],
-                        avg_rating=p.wemeet_rating or 0.0,
-                        tags=p.tags if isinstance(p.tags, list) else [],
-                        address=p.address
-                    ))
+                    results.append(PlaceInfo(p.name, p.category, [p.lat, p.lng], p.wemeet_rating or 0.0, p.tags if isinstance(p.tags, list) else [], p.address))
             
-            # DB만으로 30개 넘으면 API 호출 생략
-            if len(results) >= 30:
+            # DB 데이터가 충분하면 API 생략
+            if len(results) >= 50:
                 continue
 
-            # 2. [API 호출] 부족하면 네이버 검색
+            # 2. [API 호출]
             search_query = f"{region_name} {q}" if region_name else q
             
-            # 🌟 최대 10페이지(50개)까지 조회 (기존 5페이지 -> 10페이지)
-            # display=5 (Max)
+            # 최대 10페이지 조회
             for start_idx in range(1, 50, 5):
-                if len(results) >= 30: # 목표 달성 시 중단
-                    break
+                if len(results) >= 50: break
 
                 try:
-                    # 🌟 약간의 딜레이로 API 안정성 확보
-                    time.sleep(0.2) 
+                    time.sleep(0.1) # 속도 조절
                     
                     url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=5&start={start_idx}&sort=random"
                     res = requests.get(url, headers=self.search_headers)
                     
                     if res.status_code == 200:
                         items = res.json().get('items', [])
-                        if not items: break 
+                        if not items: break
 
                         for item in items:
                             clean_name = item['title'].replace('<b>', '').replace('</b>', '')
-                            
                             if clean_name in seen_names: continue
                             
-                            # 도로명 주소 우선, 없으면 지번 주소
                             address = item['roadAddress'] or item['address']
                             lat, lng = self.get_coordinates(address)
-                            
-                            # 좌표 변환 실패 시 로그 출력 (디버깅용)
-                            if lat == 0.0: 
-                                # print(f"⚠️ 좌표 변환 실패: {clean_name} ({address})")
-                                continue
+                            if lat == 0.0: continue
 
-                            if center_lat != 0.0 and ((lat - center_lat)**2 + (lng - center_lng)**2)**0.5 > 0.05:
-                                continue
+                            # 🌟 [수정] 거리 제한 해제 (API 검색 시)
+                            # 아래 코드가 있으면 5km 밖의 장소(롯데리아 등)는 다 잘려나갑니다.
+                            # if center_lat != 0.0 and ((lat - center_lat)**2 + (lng - center_lng)**2)**0.5 > 0.05:
+                            #     continue
 
                             seen_names.add(clean_name)
                             category = item['category'].split('>')[0] if item['category'] else "기타"
@@ -115,22 +101,11 @@ class RealDataProvider:
                             if db:
                                 try:
                                     if not repo.get_place_by_name(db, clean_name):
-                                        repo.create_place(
-                                            db, name=clean_name, category=category, 
-                                            lat=lat, lng=lng, tags=[q], rating=0.0, address=address
-                                        )
-                                        db.commit() 
-                                except Exception:
-                                    db.rollback()
+                                        repo.create_place(db, clean_name, category, lat, lng, [q], 0.0, address)
+                                        db.commit()
+                                except: db.rollback()
 
-                            results.append(PlaceInfo(
-                                name=clean_name,
-                                category=category,
-                                location=[lat, lng],
-                                avg_rating=0.0,
-                                tags=[q],
-                                address=address
-                            ))
+                            results.append(PlaceInfo(clean_name, category, [lat, lng], 0.0, [q], address))
                 except Exception as e:
                     print(f"Search API Error: {e}")
                     break
