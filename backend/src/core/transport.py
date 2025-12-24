@@ -1,11 +1,13 @@
 import math
 import requests
+from sqlalchemy.orm import Session  # 🌟 추가됨
+from sqlalchemy import text         # 🌟 추가됨
 from ..core.config import settings
 
 class TransportEngine:
     ODSAY_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
     
-    # 🌟 서울/경기/인천 주요 거점 및 환승역 (확장된 리스트 유지)
+    # 🌟 서울/경기/인천 주요 거점 및 환승역 (사용자님 데이터 그대로 유지)
     SEOUL_HOTSPOTS = [
          # --- 1호선 ---
         {"name": "서울역", "lat": 37.5559, "lng": 126.9723, "lines": [1, 4, "공항", "KTX"]},
@@ -220,40 +222,17 @@ class TransportEngine:
     ]
 
     @staticmethod
-    def get_transit_time(sx, sy, ex, ey):
-        """ODsay API를 사용하여 대중교통 소요 시간(분)을 반환"""
-        if not settings.ODSAY_API_KEY:
-            return None 
-
-        params = {
-            "SX": sx, "SY": sy, "EX": ex, "EY": ey,
-            "apiKey": settings.ODSAY_API_KEY
-        }
-        try:
-            res = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
-            if res.status_code == 200:
-                data = res.json()
-                if "result" in data and "path" in data["result"]:
-                    # 최단 시간 경로 반환
-                    best_path = min(data["result"]["path"], key=lambda x: x["info"]["totalTime"])
-                    return best_path["info"]["totalTime"]
-        except:
-            pass
-        return None
-
-    @staticmethod
     def _haversine(lat1, lon1, lat2, lon2):
-        """직선 거리 계산 (API 실패 시 백업용)"""
         R = 6371
         dLat = math.radians(lat2 - lat1)
         dLon = math.radians(lon2 - lon1)
         a = math.sin(dLat/2) * math.sin(dLat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2) * math.sin(dLon/2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c * 1000 # 미터 단위
+        return R * c * 1000
 
     @staticmethod
     def get_nearest_hotspot(lat, lng):
-        """특정 위치에서 가장 가까운 핫스팟 찾기 (단일 사용자용)"""
+        """좌표에서 가장 가까운 핫스팟(지하철역)을 찾아서 이름 반환"""
         nearest = None
         min_dist = float('inf')
         for spot in TransportEngine.SEOUL_HOTSPOTS:
@@ -263,32 +242,97 @@ class TransportEngine:
                 nearest = spot
         return nearest, min_dist
 
+    # 🌟 [핵심] DB 캐시 확인 -> 없으면 API 호출 -> DB 저장
     @staticmethod
-    def find_best_midpoint(users_locations: list):
-        """
-        [핵심 기능] 다수 사용자의 위치를 기반으로 이동 시간 총합이 가장 적은 최적의 장소 추천
-        """
-        best_spot = None
-        min_total_time = float('inf')
+    def get_transit_time(db: Session, start_name: str, end_name: str, sx, sy, ex, ey):
+        if start_name == end_name:
+            return 0
 
-        # 모든 핫스팟을 순회하며 시뮬레이션
+        # 1. 캐시 테이블 조회 (start_name_end_name 키값 생성)
+        cache_key = f"{start_name}_{end_name}"
+        try:
+            query = text("SELECT total_time FROM travel_time_cache WHERE id = :id")
+            result = db.execute(query, {"id": cache_key}).fetchone()
+            if result:
+                # print(f"✅ Cache Hit: {start_name} -> {end_name} ({result[0]}분)")
+                return result[0]
+        except Exception as e:
+            print(f"Cache Read Error: {e}")
+
+        # 2. 캐시 없으면 ODsay API 호출
+        if not settings.ODSAY_API_KEY:
+            return None 
+
+        params = { "SX": sx, "SY": sy, "EX": ex, "EY": ey, "apiKey": settings.ODSAY_API_KEY }
+        try:
+            res = requests.get(TransportEngine.ODSAY_URL, params=params, timeout=3)
+            if res.status_code == 200:
+                data = res.json()
+                if "result" in data and "path" in data["result"]:
+                    best_path = min(data["result"]["path"], key=lambda x: x["info"]["totalTime"])
+                    time_min = best_path["info"]["totalTime"]
+
+                    # 3. 결과 DB 저장 (Caching)
+                    try:
+                        insert_query = text("""
+                            INSERT INTO travel_time_cache (id, start_name, end_name, total_time, created_at)
+                            VALUES (:id, :start, :end, :time, NOW())
+                            ON CONFLICT (id) DO NOTHING
+                        """)
+                        db.execute(insert_query, {"id": cache_key, "start": start_name, "end": end_name, "time": time_min})
+                        db.commit()
+                        # print(f"💾 Cache Saved: {start_name} -> {end_name}")
+                    except Exception as e:
+                        print(f"Cache Save Error: {e}")
+                        db.rollback()
+                    
+                    return time_min
+        except:
+            pass
+        return None
+
+    # 🌟 [수정] DB 세션을 받아서 처리하도록 변경
+    @staticmethod
+    def find_best_midpoints(db: Session, users_locations: list):
+        candidates = []
+
         for spot in TransportEngine.SEOUL_HOTSPOTS:
             total_time = 0
+            valid_path_count = 0
             
             for u_loc in users_locations:
-                # 1. ODsay API로 대중교통 시간 조회
-                time_cost = TransportEngine.get_transit_time(u_loc['lng'], u_loc['lat'], spot['lng'], spot['lat'])
+                # 사용자 위치에서 가장 가까운 역을 '출발역'으로 설정
+                start_node, dist = TransportEngine.get_nearest_hotspot(u_loc['lat'], u_loc['lng'])
                 
-                # 2. 실패 시 하버사인 거리로 추정 (1km당 15분 잡고 계산)
+                if start_node and dist < 2000: # 2km 이내면 해당 역을 출발지로 간주
+                    start_name = start_node['name']
+                    # DB 캐시를 활용하여 시간 조회
+                    time_cost = TransportEngine.get_transit_time(
+                        db, start_name, spot['name'], 
+                        start_node['lng'], start_node['lat'], 
+                        spot['lng'], spot['lat']
+                    )
+                else:
+                    # 역이 너무 멀면 그냥 좌표 기반으로 API 호출 (캐시 사용 X)
+                    # (여기서도 좌표 기반 캐싱을 할 수 있지만 복잡해지므로 생략)
+                    time_cost = TransportEngine.get_transit_time(
+                        db, "TEMP_COORD", spot['name'], 
+                        u_loc['lng'], u_loc['lat'], 
+                        spot['lng'], spot['lat']
+                    )
+
+                # 실패 시 하버사인 거리로 대체
                 if time_cost is None:
-                    dist = TransportEngine._haversine(u_loc['lat'], u_loc['lng'], spot['lat'], spot['lng'])
-                    time_cost = (dist / 1000) * 15 
+                    direct_dist = TransportEngine._haversine(u_loc['lat'], u_loc['lng'], spot['lat'], spot['lng'])
+                    time_cost = (direct_dist / 1000) * 15 # 1km = 15분
                 
                 total_time += time_cost
+                valid_path_count += 1
             
-            # 최소 시간 갱신
-            if total_time < min_total_time:
-                min_total_time = total_time
-                best_spot = spot
+            candidates.append({
+                "spot": spot,
+                "score": total_time
+            })
         
-        return best_spot
+        candidates.sort(key=lambda x: x["score"])
+        return [c["spot"] for c in candidates[:3]]
