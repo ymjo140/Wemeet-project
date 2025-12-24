@@ -2,16 +2,18 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Search, MapPin, X, Plus, Trash2, Users, Filter, Coins, Gem, Loader2, Star, Clock, CheckCircle2 } from "lucide-react"
+import { Search, MapPin, X, Plus, Trash2, Users, Filter, Coins, Gem, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { motion, AnimatePresence } from "framer-motion" 
+import { motion, AnimatePresence } from "framer-motion"
 
 // --- 1. 의존성 컴포넌트 및 유틸리티 ---
+
+const API_URL = "https://wemeet-backend-xqlo.onrender.com";
 
 const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
     <div className="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={onClick}>
@@ -21,8 +23,8 @@ const PlaceCard = ({ place, onClick }: { place: any, onClick: () => void }) => (
                 <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{place.score ? `★${place.score}` : ''}</span>
             </div>
             <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                <MapPin className="w-3 h-3"/> {place.category || "장소"}
-                {place.tags && <span className="text-gray-400">| {place.tags.slice(0,2).join(", ")}</span>}
+                <MapPin className="w-3 h-3" /> {place.category || "장소"}
+                {place.tags && <span className="text-gray-400">| {place.tags.slice(0, 2).join(", ")}</span>}
             </div>
             <div className="text-[10px] text-gray-400 mt-1">{place.address}</div>
         </div>
@@ -43,7 +45,7 @@ const PreferenceModal = ({ isOpen, onClose, onComplete }: any) => (
 const fetchWithAuth = async (url: string, options: any = {}) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
     const headers = { ...options.headers, "Authorization": token ? `Bearer ${token}` : "" };
-    return fetch(`https://wemeet-backend-xqlo.onrender.com${url}`, { ...options, headers });
+    return fetch(`${API_URL}${url}`, { ...options, headers });
 };
 
 declare global { interface Window { naver: any; } }
@@ -61,651 +63,666 @@ const PURPOSE_FILTERS: Record<string, any> = {
     "데이트/기념일": { label: "💖 데이트", tabs: { "COURSE": { label: "코스", options: ["맛집", "카페", "산책"] }, "VIBE": { label: "분위기", options: ["로맨틱", "조용한", "야경"] } } }
 };
 
-const API_URL = "https://wemeet-backend-xqlo.onrender.com";
-
 // --- 2. 메인 컴포넌트 ---
 
 export function HomeTab() {
-  const router = useRouter();
-  
-  // State
-  const [searchQuery, setSearchQuery] = useState("")
-  const [myLocation, setMyLocation] = useState<{lat: number, lng: number} | null>(null)
-  const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...")
-  
-  const [manualInputs, setManualInputs] = useState<{text: string, lat?: number, lng?: number}[]>([{ text: "" }]);
-  const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
-  const [includeMe, setIncludeMe] = useState(true);
+    const router = useRouter();
 
-  const [recommendations, setRecommendations] = useState<any[]>([])
-  const [currentDisplayRegion, setCurrentDisplayRegion] = useState<any>(null)
-  const [activeTabIdx, setActiveTabIdx] = useState(0)
-  
-  const [loots, setLoots] = useState<any[]>([]) 
-  const [loading, setLoading] = useState(false)
-  const [gpsError, setGpsError] = useState<string>("");
+    // State
+    const [searchQuery, setSearchQuery] = useState("")
+    const [myLocation, setMyLocation] = useState<{ lat: number, lng: number } | null>(null)
+    const [myLocationInput, setMyLocationInput] = useState("위치 확인 중...")
 
-  const [nearbyPlace, setNearbyPlace] = useState<any>(null); 
-  const [nearbyLoot, setNearbyLoot] = useState<any>(null);   
-  const [interactionLoading, setInteractionLoading] = useState(false);
+    // 🌟 manualInputs: 객체 배열로 변경
+    const [manualInputs, setManualInputs] = useState<{ text: string, lat?: number, lng?: number }[]>([{ text: "" }]);
+    const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
+    const [includeMe, setIncludeMe] = useState(true);
 
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [selectedPlace, setSelectedPlace] = useState<any>(null);
-  const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
+    const [recommendations, setRecommendations] = useState<any[]>([])
+    const [currentDisplayRegion, setCurrentDisplayRegion] = useState<any>(null)
+    const [activeTabIdx, setActiveTabIdx] = useState(0)
 
-  const [selectedPurpose, setSelectedPurpose] = useState("식사")
-  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
-  const [myProfile, setMyProfile] = useState<any>(null)
+    const [loots, setLoots] = useState<any[]>([])
+    const [loading, setLoading] = useState(false)
+    const [gpsError, setGpsError] = useState<string>("");
 
-  // Refs
-  const mapRef = useRef<any>(null)
-  const markersRef = useRef<any[]>([])
-  const lootMarkersRef = useRef<any[]>([])
-  const friendMarkersRef = useRef<any[]>([])
-  const myMarkerRef = useRef<any>(null)
-  const polylinesRef = useRef<any[]>([]) 
-  const timeMarkersRef = useRef<any[]>([]) 
+    const [nearbyPlace, setNearbyPlace] = useState<any>(null);
+    const [nearbyLoot, setNearbyLoot] = useState<any>(null);
+    const [interactionLoading, setInteractionLoading] = useState(false);
 
-  // --- Helpers ---
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-      const R = 6371e3; 
-      const φ1 = lat1 * Math.PI/180;
-      const φ2 = lat2 * Math.PI/180;
-      const Δφ = (lat2-lat1) * Math.PI/180;
-      const Δλ = (lon2-lon1) * Math.PI/180;
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
-  }
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
+    const [selectedPlace, setSelectedPlace] = useState<any>(null);
+    const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
 
-  // --- Effects ---
-  useEffect(() => {
-      const fetchMyInfo = async () => {
-          const token = localStorage.getItem("token");
-          if (!token) { setMyLocationInput("📍 현위치 (비회원)"); return; }
-          try {
-              const res = await fetchWithAuth("/api/users/me");
-              if (res.ok) {
-                  const user = await res.json();
-                  setMyProfile({ ...user, locationName: "현위치" });
-                  setMyLocationInput("📍 현위치 (GPS)");
-                  if (!user.preferences?.foods || user.preferences.foods.length === 0) setIsPreferenceModalOpen(true);
-                  if (user.location) fetchLoots(user.location.lat, user.location.lng);
-              }
-          } catch (e) {}
-      }
-      fetchMyInfo();
-  }, []);
+    const [selectedPurpose, setSelectedPurpose] = useState("식사")
+    const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({ PURPOSE: ["식사"], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] });
+    const [myProfile, setMyProfile] = useState<any>(null)
 
-  const fetchLoots = async (lat: number, lng: number) => {
-      try {
-          const res = await fetchWithAuth("/api/coins/map-loot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat, lng }) });
-          if (res.ok) setLoots(await res.json());
-      } catch (e) {}
-  }
+    // Refs
+    const mapRef = useRef<any>(null)
+    const markersRef = useRef<any[]>([])
+    const lootMarkersRef = useRef<any[]>([])
+    const friendMarkersRef = useRef<any[]>([])
+    const myMarkerRef = useRef<any>(null)
+    const polylinesRef = useRef<any[]>([])
+    const timeMarkersRef = useRef<any[]>([])
 
-  // GPS
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-    const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-            setGpsError("");
-            const { latitude, longitude } = pos.coords;
-            setMyLocation({ lat: latitude, lng: longitude });
-            
-            if (currentDisplayRegion?.places?.length > 0) {
-                let foundPlace = null;
-                for (const place of currentDisplayRegion.places) {
-                    const dist = calculateDistance(latitude, longitude, place.location[0], place.location[1]);
-                    if (dist <= 500) { foundPlace = place; break; }
-                }
-                setNearbyPlace(foundPlace);
-            }
-            if (loots.length > 0) {
-                let foundLoot = null;
-                for (const loot of loots) {
-                    const dist = calculateDistance(latitude, longitude, loot.lat, loot.lng);
-                    if (dist <= 50) { foundLoot = loot; break; }
-                }
-                setNearbyLoot(foundLoot);
-            }
-        },
-        (err) => setGpsError("위치 정보를 가져올 수 없습니다."),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [currentDisplayRegion, loots]);
-
-  // 지도 초기화 및 마커
-  useEffect(() => {
-    const initMap = () => {
-      if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
-      const center = myLocation || { lat: 37.5665, lng: 126.9780 };
-      if (!mapRef.current) {
-        mapRef.current = new window.naver.maps.Map("map", { center: new window.naver.maps.LatLng(center.lat, center.lng), zoom: 16 }); 
-      }
-
-      // 내 위치 마커
-      if (myLocation) {
-          if(myMarkerRef.current) myMarkerRef.current.setMap(null);
-          if(includeMe) {
-            myMarkerRef.current = new window.naver.maps.Marker({
-                position: new window.naver.maps.LatLng(myLocation.lat, myLocation.lng),
-                map: mapRef.current, zIndex: 100,
-                icon: { content: '<div style="font-size:30px;">🏃</div>' }
-            });
-          }
-      }
-
-      // 추천 장소 마커
-      markersRef.current.forEach(m => m.setMap(null));
-      markersRef.current = [];
-      if (currentDisplayRegion?.places) {
-          currentDisplayRegion.places.forEach((p: any) => {
-              const marker = new window.naver.maps.Marker({ 
-                  position: new window.naver.maps.LatLng(p.location[0], p.location[1]), 
-                  map: mapRef.current, title: p.name
-              });
-              markersRef.current.push(marker);
-          });
-          if (currentDisplayRegion.lat && currentDisplayRegion.lng) {
-             mapRef.current.morph(new window.naver.maps.LatLng(currentDisplayRegion.lat, currentDisplayRegion.lng));
-          }
-      }
-
-      // 보물 마커
-      lootMarkersRef.current.forEach(m => m.setMap(null));
-      lootMarkersRef.current = [];
-      loots.forEach((loot) => {
-          const marker = new window.naver.maps.Marker({
-              position: new window.naver.maps.LatLng(loot.lat, loot.lng),
-              map: mapRef.current,
-              icon: { content: '<div style="font-size:24px; animation: bounce 2s infinite;">💎</div>' }
-          });
-          lootMarkersRef.current.push(marker);
-      });
-      
-      // 친구 위치 마커
-      friendMarkersRef.current.forEach(m => m.setMap(null));
-      friendMarkersRef.current = [];
-      selectedFriends.forEach(f => {
-          const marker = new window.naver.maps.Marker({
-              position: new window.naver.maps.LatLng(f.location.lat, f.location.lng),
-              map: mapRef.current,
-              icon: { content: `<div style="padding:5px; background:white; border-radius:50%; border:2px solid #F59E0B; font-weight:bold;">${f.name[0]}</div>` }
-          });
-          friendMarkersRef.current.push(marker);
-      });
-    };
-    initMap();
-  }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe]);
-
-  // 🌟 [핵심] 경로 그리기 함수 (수동 입력 장소 포함 & 비회원 지원)
-  const drawPathsToTarget = async (destLat: number, destLng: number, transitInfo: any = null) => {
-    polylinesRef.current.forEach(p => p.setMap(null));
-    polylinesRef.current = [];
-    timeMarkersRef.current.forEach(m => m.setMap(null));
-    timeMarkersRef.current = [];
-
-    if (!mapRef.current) return;
-
-    const destLatLng = new window.naver.maps.LatLng(destLat, destLng);
-    const origins: any[] = [];
-
-    // 1. 내 위치 (비회원이어도 GPS 있으면 포함)
-    if (includeMe) {
-        const lat = myProfile?.location?.lat || myLocation?.lat;
-        const lng = myProfile?.location?.lng || myLocation?.lng;
-        // 비회원이면 '나 (비회원)' 등으로 표시
-        const name = myProfile?.name || "나";
-
-        if (lat && lng) {
-            origins.push({ lat, lng, color: '#7C3AED', name });
-        }
+    // --- Helpers ---
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 
-    // 2. 선택된 친구들
-    selectedFriends.forEach(f => {
-        if(f.location) {
-            origins.push({ 
-                lat: f.location.lat, lng: f.location.lng, 
-                color: '#F59E0B', name: f.name 
-            });
+    // --- Effects ---
+    useEffect(() => {
+        const fetchMyInfo = async () => {
+            const token = localStorage.getItem("token");
+            if (!token) { setMyLocationInput("📍 현위치 (비회원)"); return; }
+            try {
+                const res = await fetchWithAuth("/api/users/me");
+                if (res.ok) {
+                    const user = await res.json();
+                    setMyProfile({ ...user, locationName: "현위치" });
+                    setMyLocationInput("📍 현위치 (GPS)");
+                    if (!user.preferences?.foods || user.preferences.foods.length === 0) setIsPreferenceModalOpen(true);
+                    if (user.location) fetchLoots(user.location.lat, user.location.lng);
+                }
+            } catch (e) { }
         }
-    });
+        fetchMyInfo();
+    }, []);
 
-    // 3. 🌟 수동 입력 장소 (좌표 변환하여 경로에 추가)
-    for (const input of manualInputs) {
-        // [수정 1] 객체의 .text 속성을 확인
-        if (!input.text || input.text.trim() === "") continue;
-
-        // [수정 2] 이미 좌표가 있으면(자동완성 선택) API 호출 없이 바로 추가
-        if (input.lat && input.lng) {
-            origins.push({
-                lat: input.lat,
-                lng: input.lng,
-                color: '#10B981', // 초록색
-                name: input.text
-            });
-            continue; // 다음 루프로 넘어감
-        }
-
-        // [수정 3] 좌표가 없으면(직접 타이핑) API로 검색
+    const fetchLoots = async (lat: number, lng: number) => {
         try {
-            const res = await fetch(`${API_URL}/api/places/search?query=${input.text}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.length > 0) {
-                    const topHit = data[0];
-                    origins.push({
-                        lat: topHit.lat,
-                        lng: topHit.lng,
-                        color: '#10B981',
-                        name: input.text
+            const res = await fetchWithAuth("/api/coins/map-loot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat, lng }) });
+            if (res.ok) setLoots(await res.json());
+        } catch (e) { }
+    }
+
+    // GPS
+    useEffect(() => {
+        if (!navigator.geolocation) return;
+        const watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                setGpsError("");
+                const { latitude, longitude } = pos.coords;
+                setMyLocation({ lat: latitude, lng: longitude });
+
+                if (currentDisplayRegion?.places?.length > 0) {
+                    let foundPlace = null;
+                    for (const place of currentDisplayRegion.places) {
+                        const dist = calculateDistance(latitude, longitude, place.location[0], place.location[1]);
+                        if (dist <= 500) { foundPlace = place; break; }
+                    }
+                    setNearbyPlace(foundPlace);
+                }
+                if (loots.length > 0) {
+                    let foundLoot = null;
+                    for (const loot of loots) {
+                        const dist = calculateDistance(latitude, longitude, loot.lat, loot.lng);
+                        if (dist <= 50) { foundLoot = loot; break; }
+                    }
+                    setNearbyLoot(foundLoot);
+                }
+            },
+            (err) => setGpsError("위치 정보를 가져올 수 없습니다."),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+        return () => navigator.geolocation.clearWatch(watchId);
+    }, [currentDisplayRegion, loots]);
+
+    // 지도 초기화 및 마커
+    useEffect(() => {
+        const initMap = () => {
+            if (typeof window.naver === 'undefined' || !window.naver.maps) { setTimeout(initMap, 100); return; }
+            const center = myLocation || { lat: 37.5665, lng: 126.9780 };
+            if (!mapRef.current) {
+                mapRef.current = new window.naver.maps.Map("map", { center: new window.naver.maps.LatLng(center.lat, center.lng), zoom: 16 });
+            }
+
+            // 내 위치 마커
+            if (myLocation) {
+                if (myMarkerRef.current) myMarkerRef.current.setMap(null);
+                if (includeMe) {
+                    myMarkerRef.current = new window.naver.maps.Marker({
+                        position: new window.naver.maps.LatLng(myLocation.lat, myLocation.lng),
+                        map: mapRef.current, zIndex: 100,
+                        icon: { content: '<div style="font-size:30px;">🏃</div>' }
                     });
                 }
             }
+
+            // 추천 장소 마커
+            markersRef.current.forEach(m => m.setMap(null));
+            markersRef.current = [];
+            if (currentDisplayRegion?.places) {
+                currentDisplayRegion.places.forEach((p: any) => {
+                    const marker = new window.naver.maps.Marker({
+                        position: new window.naver.maps.LatLng(p.location[0], p.location[1]),
+                        map: mapRef.current, title: p.name
+                    });
+                    markersRef.current.push(marker);
+                });
+                if (currentDisplayRegion.lat && currentDisplayRegion.lng) {
+                    mapRef.current.morph(new window.naver.maps.LatLng(currentDisplayRegion.lat, currentDisplayRegion.lng));
+                }
+            }
+
+            // 보물 마커
+            lootMarkersRef.current.forEach(m => m.setMap(null));
+            lootMarkersRef.current = [];
+            loots.forEach((loot) => {
+                const marker = new window.naver.maps.Marker({
+                    position: new window.naver.maps.LatLng(loot.lat, loot.lng),
+                    map: mapRef.current,
+                    icon: { content: '<div style="font-size:24px; animation: bounce 2s infinite;">💎</div>' }
+                });
+                lootMarkersRef.current.push(marker);
+            });
+
+            // 친구 위치 마커
+            friendMarkersRef.current.forEach(m => m.setMap(null));
+            friendMarkersRef.current = [];
+            selectedFriends.forEach(f => {
+                const marker = new window.naver.maps.Marker({
+                    position: new window.naver.maps.LatLng(f.location.lat, f.location.lng),
+                    map: mapRef.current,
+                    icon: { content: `<div style="padding:5px; background:white; border-radius:50%; border:2px solid #F59E0B; font-weight:bold;">${f.name[0]}</div>` }
+                });
+                friendMarkersRef.current.push(marker);
+            });
+        };
+        initMap();
+    }, [myLocation, currentDisplayRegion, loots, selectedFriends, includeMe]);
+
+    // 🌟 [수정됨] 경로 그리기 함수 (객체 타입 manualInputs 지원)
+    const drawPathsToTarget = async (destLat: number, destLng: number, transitInfo: any = null) => {
+        polylinesRef.current.forEach(p => p.setMap(null));
+        polylinesRef.current = [];
+        timeMarkersRef.current.forEach(m => m.setMap(null));
+        timeMarkersRef.current = [];
+
+        if (!mapRef.current) return;
+
+        const destLatLng = new window.naver.maps.LatLng(destLat, destLng);
+        const origins: any[] = [];
+
+        // 1. 내 위치
+        if (includeMe) {
+            const lat = myProfile?.location?.lat || myLocation?.lat;
+            const lng = myProfile?.location?.lng || myLocation?.lng;
+            const name = myProfile?.name || "나";
+            if (lat && lng) {
+                origins.push({ lat, lng, color: '#7C3AED', name });
+            }
+        }
+
+        // 2. 친구들
+        selectedFriends.forEach(f => {
+            if (f.location) {
+                origins.push({
+                    lat: f.location.lat, lng: f.location.lng,
+                    color: '#F59E0B', name: f.name
+                });
+            }
+        });
+
+        // 3. 수동 입력 장소
+        for (const input of manualInputs) {
+            if (!input.text || input.text.trim() === "") continue;
+
+            // 이미 좌표가 있으면(자동완성 선택)
+            if (input.lat && input.lng) {
+                origins.push({
+                    lat: input.lat,
+                    lng: input.lng,
+                    color: '#10B981',
+                    name: input.text
+                });
+                continue;
+            }
+
+            // 좌표가 없으면(직접 타이핑) API 검색
+            try {
+                const res = await fetch(`${API_URL}/api/places/search?query=${input.text}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.length > 0) {
+                        const topHit = data[0];
+                        origins.push({
+                            lat: topHit.lat,
+                            lng: topHit.lng,
+                            color: '#10B981',
+                            name: input.text
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("수동 입력 장소 좌표 찾기 실패:", e);
+            }
+        }
+
+        // 4. 지도에 그리기
+        origins.forEach(origin => {
+            const polyline = new window.naver.maps.Polyline({
+                map: mapRef.current,
+                path: [new window.naver.maps.LatLng(origin.lat, origin.lng), destLatLng],
+                strokeColor: origin.color, strokeWeight: 5, strokeStyle: 'shortdash', strokeOpacity: 0.8,
+                endIcon: window.naver.maps.PointingIcon.OPEN_ARROW
+            });
+            polylinesRef.current.push(polyline);
+
+            // 시간 텍스트 추정 (직선 거리 기반)
+            const dist = calculateDistance(origin.lat, origin.lng, destLat, destLng);
+            const timeText = `약 ${Math.ceil(dist / 1000 * 5 + 10)}분`;
+
+            const midLat = (origin.lat + destLat) / 2;
+            const midLng = (origin.lng + destLng) / 2;
+
+            const timeMarker = new window.naver.maps.Marker({
+                position: new window.naver.maps.LatLng(midLat, midLng),
+                map: mapRef.current,
+                icon: {
+                    content: `
+                        <div style="background-color: rgba(30, 41, 59, 0.9); color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 6px; z-index: 9999;">
+                            <div style="width: 8px; height: 8px; background-color: ${origin.color}; border-radius: 50%;"></div>
+                            <span>${origin.name}</span>
+                            <span style="opacity: 0.5;">|</span>
+                            <span style="color: #FCD34D;">${timeText}</span>
+                        </div>`,
+                    anchor: new window.naver.maps.Point(50, 50)
+                }
+            });
+            timeMarkersRef.current.push(timeMarker);
+        });
+    }
+
+    const drawRegionPaths = (region: any) => {
+        if (!region) return;
+        drawPathsToTarget(region.lat, region.lng, region.transit_info);
+    }
+
+    useEffect(() => {
+        if (currentDisplayRegion && mapRef.current) {
+            drawRegionPaths(currentDisplayRegion);
+        }
+    }, [currentDisplayRegion]);
+
+    // API 호출 (추천)
+    const fetchRecommendations = async (participants: any[], manualLocs: { text: string, lat?: number, lng?: number }[]) => {
+        setLoading(true);
+        try {
+            const allTags = Object.values(selectedFilters).flat();
+            const usersToSend = participants.map(u => ({
+                id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.5665, lng: 126.9780 }, preferences: u.preferences || {}
+            }));
+
+            // 🌟 좌표 포함하여 전송
+            const validManualLocs = manualLocs
+                .filter(loc => loc.text && loc.text.trim() !== "")
+                .map(loc => {
+                    if (loc.lat && loc.lng) return `${loc.lat},${loc.lng}`;
+                    return loc.text;
+                });
+
+            const response = await fetch(`${API_URL}/api/recommend`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    users: usersToSend, purpose: selectedPurpose, location_name: "중간지점",
+                    manual_locations: validManualLocs, user_selected_tags: allTags,
+                    current_lat: myProfile?.location?.lat || myLocation?.lat || 37.5665,
+                    current_lng: myProfile?.location?.lng || myLocation?.lng || 126.9780
+                })
+            })
+
+            if (response.ok) {
+                const data = await response.json() as any[];
+                setRecommendations(data);
+                setActiveTabIdx(0);
+                if (data.length > 0) setCurrentDisplayRegion(data[0]);
+            }
+        } catch (e) { console.error(e) }
+        finally { setLoading(false) }
+    }
+
+    // --- Handlers ---
+    
+    // 🌟 [수정됨] 상단 검색바 로직: 장소 검색(Search) 수행
+    const handleTopSearch = async () => {
+        if (!searchQuery || searchQuery.trim() === "") return;
+
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/places/search?query=${searchQuery}`);
+            if (res.ok) {
+                const data = await res.json();
+
+                if (data && data.length > 0) {
+                    const searchResultPlace = data.map((item: any, idx: number) => ({
+                        id: 90000 + idx,
+                        name: item.title.replace(/<[^>]*>?/gm, ''),
+                        category: item.category || "검색 장소",
+                        address: item.address,
+                        location: [item.lat, item.lng],
+                        lat: item.lat,
+                        lng: item.lng,
+                        tags: ["검색결과"],
+                        score: 0,
+                        image: null
+                    }));
+
+                    const searchRegion = {
+                        region_name: `'${searchQuery}' 검색 결과`,
+                        lat: searchResultPlace[0].lat,
+                        lng: searchResultPlace[0].lng,
+                        places: searchResultPlace,
+                        transit_info: null
+                    };
+
+                    setRecommendations([searchRegion]);
+                    setCurrentDisplayRegion(searchRegion);
+                    setActiveTabIdx(0);
+
+                    if (mapRef.current) {
+                        const newCenter = new window.naver.maps.LatLng(searchResultPlace[0].lat, searchResultPlace[0].lng);
+                        mapRef.current.morph(newCenter);
+                    }
+                } else {
+                    alert("검색 결과가 없습니다.");
+                }
+            }
         } catch (e) {
-            console.error("수동 입력 장소 좌표 찾기 실패:", e);
+            console.error("Search failed:", e);
+            alert("검색 중 오류가 발생했습니다.");
+        } finally {
+            setLoading(false);
         }
     }
 
-    console.log("📍 경로 그리기 시작. 총 출발지:", origins.length);
+    const handleMidpointSearch = () => {
+        let participants = [...selectedFriends];
+        if (includeMe) {
+            const me = myProfile || { id: 0, name: "나", location: myLocation, preferences: {} };
+            if (me.location) participants = [me, ...selectedFriends];
+        }
+        // 🌟 .text 속성 체크
+        const hasManualInput = manualInputs.some(input => input.text && input.text.trim() !== "");
 
-    // 4. 지도에 그리기
-    origins.forEach(origin => {
-        // A. 경로선(Polyline)
-        const polyline = new window.naver.maps.Polyline({
-            map: mapRef.current,
-            path: [new window.naver.maps.LatLng(origin.lat, origin.lng), destLatLng],
-            strokeColor: origin.color, strokeWeight: 5, strokeStyle: 'shortdash', strokeOpacity: 0.8,
-            endIcon: window.naver.maps.PointingIcon.OPEN_ARROW
+        if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
+
+        fetchRecommendations(participants, manualInputs);
+    };
+
+    const handleManualInputChange = (idx: number, val: string) => {
+        const newInputs = [...manualInputs];
+        newInputs[idx] = { ...newInputs[idx], text: val, lat: undefined, lng: undefined };
+        setManualInputs(newInputs);
+    };
+    const handleManualSelect = (idx: number, place: any) => {
+        const newInputs = [...manualInputs];
+        newInputs[idx] = { text: place.name, lat: place.lat, lng: place.lng };
+        setManualInputs(newInputs);
+    };
+    // 🌟 빈 객체 추가
+    const addManualInput = () => setManualInputs([...manualInputs, { text: "" }]);
+    const removeManualInput = (idx: number) => setManualInputs(manualInputs.filter((_, i) => i !== idx));
+    const toggleFriend = (friend: any) => {
+        if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]);
+    };
+
+    const toggleFilter = (k: string, v: string) => {
+        setSelectedFilters(prev => {
+            const list = prev[k] || [];
+            return list.includes(v) ? { ...prev, [k]: list.filter(i => i !== v) } : { ...prev, [k]: [...list, v] };
         });
-        polylinesRef.current.push(polyline);
+    };
+    const removeTag = (tag: string) => { for (const [key, vals] of Object.entries(selectedFilters)) { if (vals.includes(tag)) toggleFilter(key, tag); } };
 
-        // B. 시간 텍스트 계산
-        let timeText = "";
-        // 백엔드 데이터 매칭 시도
-        if (transitInfo && transitInfo.details) {
-            const detail = transitInfo.details.find((d: any) => d.name === origin.name || (origin.name === "나" && d.name === myProfile?.name));
-            if (detail) timeText = `${detail.time}분`;
-        }
-        
-        // 데이터 없으면 거리 비례 추산 (도보/차량 혼합 가정)
-        if (!timeText || timeText === "?분") {
-            const dist = calculateDistance(origin.lat, origin.lng, destLat, destLng);
-            // 직선거리 기반 대략적 시간 (1km당 5분 + 기본 10분)
-            timeText = `약 ${Math.ceil(dist/1000 * 5 + 10)}분`;
-        }
+    const handleCheckIn = async () => {
+        if (!nearbyPlace) return;
+        setInteractionLoading(true);
+        try {
+            await fetchWithAuth("/api/coins/check-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ place_name: nearbyPlace.name, lat: nearbyPlace.location[0], lng: nearbyPlace.location[1] }) });
+            alert("50코인 획득!"); setNearbyPlace(null);
+        } catch (e) { alert("오류"); } finally { setInteractionLoading(false); }
+    }
+    const handleClaimLoot = async () => {
+        if (!nearbyLoot) return;
+        setInteractionLoading(true);
+        try {
+            await fetchWithAuth("/api/coins/claim-loot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ loot_id: nearbyLoot.id, amount: nearbyLoot.amount }) });
+            alert(`${nearbyLoot.amount}코인 획득!`); setLoots(p => p.filter(l => l.id !== nearbyLoot.id)); setNearbyLoot(null);
+        } catch (e) { alert("오류"); } finally { setInteractionLoading(false); }
+    }
 
-        // C. 말풍선 마커 (경로 중간 지점)
-        const midLat = (origin.lat + destLat) / 2;
-        const midLng = (origin.lng + destLng) / 2;
+    const handlePlaceClick = (p: any) => {
+        setSelectedPlace(p);
+        setIsDetailOpen(true);
+        drawPathsToTarget(p.location[0], p.location[1], currentDisplayRegion?.transit_info);
+    };
 
-        const timeMarker = new window.naver.maps.Marker({
-            position: new window.naver.maps.LatLng(midLat, midLng),
-            map: mapRef.current,
-            icon: {
-                content: `
-                    <div style="
-                        background-color: rgba(30, 41, 59, 0.9);
-                        color: white;
-                        padding: 6px 12px;
-                        border-radius: 20px;
-                        font-size: 12px;
-                        font-weight: bold;
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-                        white-space: nowrap;
-                        display: flex;
-                        align-items: center;
-                        gap: 6px;
-                        z-index: 9999;
-                        border: 1px solid rgba(255,255,255,0.2);
-                    ">
-                        <div style="width: 8px; height: 8px; background-color: ${origin.color}; border-radius: 50%;"></div>
-                        <span>${origin.name}</span>
-                        <span style="opacity: 0.5;">|</span>
-                        <span style="color: #FCD34D;">${timeText}</span>
+    const currentFilters = PURPOSE_FILTERS[selectedPurpose];
+
+    // --- Render ---
+    return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col bg-[#F3F4F6] relative font-['Pretendard']">
+
+            {/* 상단 검색바 */}
+            <div className="absolute top-4 left-4 right-4 z-10">
+                <div className="flex items-center bg-white rounded-2xl shadow-md h-12 px-4 border border-gray-100">
+                    <Search className="w-5 h-5 text-gray-400 mr-2" />
+                    <Input 
+                        className="border-none bg-transparent h-full text-base p-0" 
+                        placeholder="빠른 장소 검색 (예: 백소정)" 
+                        value={searchQuery} 
+                        onChange={(e) => setSearchQuery(e.target.value)} 
+                        onKeyDown={(e) => e.key === 'Enter' && handleTopSearch()} 
+                    />
+                </div>
+                <div className="flex gap-2 overflow-x-auto mt-2 pb-1 scrollbar-hide">
+                    <Button variant="outline" size="sm" className="rounded-full bg-white shadow-sm border-[#7C3AED] text-[#7C3AED]" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1" />필터</Button>
+                    <Badge className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] border-0 text-white h-9 px-3 flex items-center">{currentFilters?.label}</Badge>
+                    {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => (
+                        <Badge key={tag} variant="secondary" className="h-9 px-3 rounded-full bg-white text-gray-600 border border-gray-200 text-xs font-normal whitespace-nowrap flex-shrink-0 cursor-pointer" onClick={() => removeTag(tag)}>
+                            {tag} <X className="w-3 h-3 ml-1" />
+                        </Badge>
+                    ))}
+                </div>
+            </div>
+
+            <div id="map" className="w-full h-full bg-gray-200"></div>
+
+            {/* 상호작용 버튼 */}
+            <AnimatePresence>
+                {nearbyLoot ? (
+                    <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="absolute bottom-24 left-4 right-4 z-30">
+                        <Button onClick={handleClaimLoot} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white font-bold shadow-xl animate-pulse flex gap-2"><Gem className="w-5 h-5" /> 보물 줍기 (+{nearbyLoot.amount}C)</Button>
+                    </motion.div>
+                ) : nearbyPlace ? (
+                    <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="absolute bottom-24 left-4 right-4 z-30">
+                        <Button onClick={handleCheckIn} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-xl animate-bounce flex gap-2"><Coins className="w-5 h-5" /> 방문 인증 (+50C)</Button>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
+
+            {/* 출발지 설정 카드 (기본 표시) */}
+            {!recommendations.length && (
+                <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
+                    <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
+                    <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                        {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={() => setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400" /></button></div>}
+                        {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={() => toggleFriend(f)}><X className="w-4 h-4 text-gray-400" /></button></div>)}
+                        {manualInputs.map((val, i) => (
+                            <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
+                                <MapPin className="w-5 h-5 text-gray-400 mt-1.5" />
+                                <div className="flex-1">
+                                    <PlaceAutocomplete
+                                        value={val.text}
+                                        onChange={(v: string) => handleManualInputChange(i, v)}
+                                        onSelect={(place: any) => handleManualSelect(i, place)}
+                                        placeholder="장소 입력 (예: 강남)"
+                                    />
+                                </div>
+                                <button onClick={() => removeManualInput(i)} className="mt-1"><Trash2 className="w-4 h-4 text-gray-400" /></button>
+                            </div>
+                        ))}
                     </div>
-                `,
-                anchor: new window.naver.maps.Point(50, 50)
-            }
-        });
-        timeMarkersRef.current.push(timeMarker);
-    });
-  }
-
-  // 매니저 함수
-  const drawRegionPaths = (region: any) => {
-      if (!region) return;
-      drawPathsToTarget(region.lat, region.lng, region.transit_info);
-  }
-
-  // 탭 변경 감지
-  useEffect(() => {
-      if (currentDisplayRegion && mapRef.current) {
-          drawRegionPaths(currentDisplayRegion);
-      }
-  }, [currentDisplayRegion]);
-
-  // API 호출
-  const fetchRecommendations = async (participants: any[], manualLocs: {text: string, lat?: number, lng?: number}[]) => {
-    setLoading(true);
-    try {
-      const allTags = Object.values(selectedFilters).flat();
-      const usersToSend = participants.map(u => ({
-        id: u.id || 0, name: u.name || "User", location: u.location || { lat: 37.5665, lng: 126.9780 }, preferences: u.preferences || {}
-      }));
-
-      // 🌟 [핵심] 좌표가 있으면 "lat,lng" 문자열로 변환하여 전송 (백엔드가 인식함)
-      const validManualLocs = manualLocs
-            .filter(loc => loc.text && loc.text.trim() !== "")
-            .map(loc => {
-                if (loc.lat && loc.lng) return `${loc.lat},${loc.lng}`;
-                return loc.text;
-            });
-      
-      const response = await fetch(`${API_URL}/api/recommend`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          users: usersToSend, purpose: selectedPurpose, location_name: "중간지점", 
-          manual_locations: validManualLocs, user_selected_tags: allTags,
-          current_lat: myProfile?.location?.lat || myLocation?.lat || 37.5665, 
-          current_lng: myProfile?.location?.lng || myLocation?.lng || 126.9780
-        })
-      })
-
-      if (response.ok) {
-          const data = await response.json() as any[];
-          setRecommendations(data);
-          setActiveTabIdx(0); 
-          if (data.length > 0) setCurrentDisplayRegion(data[0]);
-      }
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
-  }
-
-  // --- Handlers ---
-  const handleMidpointSearch = () => {
-      let participants = [...selectedFriends];
-      if (includeMe) {
-          // 비회원이라도 GPS가 있으면 참여자로 포함
-          const me = myProfile || { id: 0, name: "나", location: myLocation, preferences: {} };
-          if (me.location) participants = [me, ...selectedFriends];
-      }
-      const hasManualInput = manualInputs.some(input => input.text && input.text.trim() !== "");
-    
-    if (participants.length === 0 && !hasManualInput) { alert("출발지를 설정해주세요!"); return; }
-    
-    fetchRecommendations(participants, manualInputs);
-};
-
-  const handleManualInputChange = (idx: number, val: string) => { 
-    const newInputs = [...manualInputs]; 
-    // 텍스트가 바뀌면 기존 좌표는 무효화 (사용자가 직접 수정했으므로)
-    newInputs[idx] = { ...newInputs[idx], text: val, lat: undefined, lng: undefined }; 
-    setManualInputs(newInputs); 
-};
-const handleManualSelect = (idx: number, place: any) => {
-    const newInputs = [...manualInputs];
-    newInputs[idx] = { text: place.name, lat: place.lat, lng: place.lng };
-    setManualInputs(newInputs);
-};
-const addManualInput = () => setManualInputs([...manualInputs, { text: "" }]);
-const removeManualInput = (idx: number) => setManualInputs(manualInputs.filter((_, i) => i !== idx));
-  const toggleFriend = (friend: any) => { 
-      if (selectedFriends.find(f => f.id === friend.id)) setSelectedFriends(prev => prev.filter(f => f.id !== friend.id)); else setSelectedFriends(prev => [...prev, friend]); 
-  };
-  
-  const toggleFilter = (k: string, v: string) => {
-      setSelectedFilters(prev => {
-          const list = prev[k] || [];
-          return list.includes(v) ? { ...prev, [k]: list.filter(i => i !== v) } : { ...prev, [k]: [...list, v] };
-      });
-  };
-  const removeTag = (tag: string) => { for (const [key, vals] of Object.entries(selectedFilters)) { if (vals.includes(tag)) toggleFilter(key, tag); } };
-  
-  const handleCheckIn = async () => {
-      if (!nearbyPlace) return;
-      setInteractionLoading(true);
-      try {
-          await fetchWithAuth("/api/coins/check-in", { method: "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({place_name:nearbyPlace.name, lat:nearbyPlace.location[0], lng:nearbyPlace.location[1]}) });
-          alert("50코인 획득!"); setNearbyPlace(null);
-      } catch(e) { alert("오류"); } finally { setInteractionLoading(false); }
-  }
-  const handleClaimLoot = async () => {
-      if (!nearbyLoot) return;
-      setInteractionLoading(true);
-      try {
-          await fetchWithAuth("/api/coins/claim-loot", { method: "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({loot_id:nearbyLoot.id, amount:nearbyLoot.amount}) });
-          alert(`${nearbyLoot.amount}코인 획득!`); setLoots(p=>p.filter(l=>l.id!==nearbyLoot.id)); setNearbyLoot(null);
-      } catch(e) { alert("오류"); } finally { setInteractionLoading(false); }
-  }
-  
-  const handlePlaceClick = (p: any) => { 
-      setSelectedPlace(p); 
-      setIsDetailOpen(true);
-      drawPathsToTarget(p.location[0], p.location[1], currentDisplayRegion?.transit_info);
-  };
-
-  const handleTopSearch = () => { 
-    if(searchQuery) fetchRecommendations([myProfile], [{ text: searchQuery }]); 
-}
-  const currentFilters = PURPOSE_FILTERS[selectedPurpose];
-
-  // --- Render ---
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col bg-[#F3F4F6] relative font-['Pretendard']">
-      
-      {/* 상단 검색바 */}
-      <div className="absolute top-4 left-4 right-4 z-10">
-        <div className="flex items-center bg-white rounded-2xl shadow-md h-12 px-4 border border-gray-100">
-            <Search className="w-5 h-5 text-gray-400 mr-2" />
-            <Input className="border-none bg-transparent h-full text-base p-0" placeholder="빠른 장소 검색..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e)=>e.key==='Enter'&&handleTopSearch()}/>
-        </div>
-        <div className="flex gap-2 overflow-x-auto mt-2 pb-1 scrollbar-hide">
-            <Button variant="outline" size="sm" className="rounded-full bg-white shadow-sm border-[#7C3AED] text-[#7C3AED]" onClick={() => setIsFilterOpen(true)}><Filter className="w-3 h-3 mr-1"/>필터</Button>
-            <Badge className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#14B8A6] border-0 text-white h-9 px-3 flex items-center">{currentFilters?.label}</Badge>
-            {Object.entries(selectedFilters).flatMap(([k, v]) => v).map(tag => (
-                <Badge key={tag} variant="secondary" className="h-9 px-3 rounded-full bg-white text-gray-600 border border-gray-200 text-xs font-normal whitespace-nowrap flex-shrink-0 cursor-pointer" onClick={() => removeTag(tag)}>
-                    {tag} <X className="w-3 h-3 ml-1"/>
-                </Badge>
-            ))}
-        </div>
-      </div>
-
-      <div id="map" className="w-full h-full bg-gray-200"></div>
-
-      {/* 상호작용 버튼 */}
-      <AnimatePresence>
-        {nearbyLoot ? (
-            <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="absolute bottom-24 left-4 right-4 z-30">
-                <Button onClick={handleClaimLoot} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white font-bold shadow-xl animate-pulse flex gap-2"><Gem className="w-5 h-5"/> 보물 줍기 (+{nearbyLoot.amount}C)</Button>
-            </motion.div>
-        ) : nearbyPlace ? (
-            <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="absolute bottom-24 left-4 right-4 z-30">
-                <Button onClick={handleCheckIn} disabled={interactionLoading} className="w-full h-14 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-white font-bold shadow-xl animate-bounce flex gap-2"><Coins className="w-5 h-5"/> 방문 인증 (+50C)</Button>
-            </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      {/* 출발지 설정 카드 (기본 표시) */}
-      {!recommendations.length && (
-          <div className="absolute bottom-4 left-4 right-4 bg-white rounded-3xl p-5 shadow-lg border border-gray-100 z-20">
-            <h2 className="text-lg font-bold mb-3">어디서 모이나요?</h2>
-            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-                {includeMe && <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><span className="text-xl">👤</span><span className="flex-1 text-sm">{myLocationInput}</span><button onClick={()=>setIncludeMe(false)}><Trash2 className="w-4 h-4 text-gray-400"/></button></div>}
-                {selectedFriends.map(f => <div key={f.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl"><Avatar className="w-8 h-8"><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><span className="flex-1 text-sm">{f.name}</span><button onClick={()=>toggleFriend(f)}><X className="w-4 h-4 text-gray-400"/></button></div>)}
-                {manualInputs.map((val, i) => (
-    <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 rounded-xl relative z-50">
-        <MapPin className="w-5 h-5 text-gray-400 mt-1.5"/>
-        <div className="flex-1">
-            {/* 🌟 수정된 PlaceAutocomplete 연동 */}
-            <PlaceAutocomplete 
-                value={val.text} 
-                onChange={(v: string) => handleManualInputChange(i, v)} 
-                onSelect={(place: any) => handleManualSelect(i, place)}
-                placeholder="장소 입력 (예: 강남)"
-            />
-        </div>
-        <button onClick={() => removeManualInput(i)} className="mt-1"><Trash2 className="w-4 h-4 text-gray-400"/></button>
-    </div>
-))}
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-3">
-                <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-2"/>친구</Button>
-                <Button variant="outline" onClick={addManualInput}><Plus className="w-4 h-4 mr-2"/>장소</Button>
-            </div>
-            {!includeMe && <button onClick={()=>setIncludeMe(true)} className="text-xs text-gray-500 mt-2 underline w-full">+ 내 위치 추가</button>}
-            <Button className="w-full mt-3 h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold" onClick={handleMidpointSearch}>🚀 중간 지점 찾기</Button>
-          </div>
-      )}
-
-      {/* 추천 결과 리스트 */}
-      <AnimatePresence>
-        {recommendations.length > 0 && (
-            <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] max-h-[60vh] overflow-y-auto z-20">
-                <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4"/>
-                <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">추천 지역</h3><button 
-    onClick={() => {
-        setRecommendations([]); 
-        setManualInputs([{ text: "" }]); 
-    }} 
-    className="text-xs text-gray-400"
->
-    다시 찾기
-</button></div>
-                
-                {/* 지역 선택 탭 */}
-                <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
-                    {recommendations.map((r, i) => (
-                        <button key={i} onClick={()=>{setActiveTabIdx(i); setCurrentDisplayRegion(r);}} 
-                            className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTabIdx===i?"bg-[#7C3AED] text-white shadow-md":"bg-gray-100 text-gray-500"}`}>
-                            {r.region_name}
-                        </button>
-                    ))}
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                        <Button variant="outline" onClick={() => setIsFriendModalOpen(true)}><Users className="w-4 h-4 mr-2" />친구</Button>
+                        <Button variant="outline" onClick={addManualInput}><Plus className="w-4 h-4 mr-2" />장소</Button>
+                    </div>
+                    {!includeMe && <button onClick={() => setIncludeMe(true)} className="text-xs text-gray-500 mt-2 underline w-full">+ 내 위치 추가</button>}
+                    <Button className="w-full mt-3 h-12 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold" onClick={handleMidpointSearch}>🚀 중간 지점 찾기</Button>
                 </div>
+            )}
 
-                <div className="space-y-3">{currentDisplayRegion?.places?.map((p: any) => <PlaceCard key={p.id} place={p} onClick={()=>handlePlaceClick(p)}/>)}</div>
-            </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Loading & Error */}
-      {loading && <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin"/></div>}
-      {gpsError && <div className="absolute top-24 left-4 right-4 bg-red-100 text-red-600 p-2 rounded-lg text-xs z-50">{gpsError}</div>}
-
-      {/* 필터 상세 설정 모달 */}
-      <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
-          <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
-              <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b">
-                  <DialogTitle>상세 필터 설정</DialogTitle>
-                  <DialogDescription className="hidden">모임의 목적과 세부 옵션을 설정하세요.</DialogDescription>
-              </DialogHeader>
-              
-              <div className="px-4 py-3 bg-gray-50 border-b">
-                <div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div>
-                <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                    {Object.keys(PURPOSE_FILTERS).map((purposeKey) => (
-                        <Button key={purposeKey} variant={selectedPurpose === purposeKey ? "default" : "outline"} className={`rounded-full h-8 text-xs flex-shrink-0 ${selectedPurpose === purposeKey ? "bg-[#7C3AED] text-white" : "text-gray-600"}`} onClick={() => { setSelectedPurpose(purposeKey); setSelectedFilters({ PURPOSE: [purposeKey], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] }); }}>
-                            {PURPOSE_FILTERS[purposeKey].label}
-                        </Button>
-                    ))}
-                </div>
-              </div>
-
-              <div className="flex-1 flex flex-col bg-white overflow-hidden">
-                {currentFilters && (
-                    <Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
-                        <div className="px-4 pt-2 border-b">
-                            <TabsList className="w-full grid grid-cols-2 h-auto p-1 bg-gray-100 rounded-lg">
-                                {Object.keys(currentFilters.tabs).map((tabKey) => (
-                                    <TabsTrigger key={tabKey} value={tabKey} className="text-xs py-1.5">{currentFilters.tabs[tabKey].label}</TabsTrigger>
-                                ))}
-                            </TabsList>
+            {/* 추천 결과 리스트 */}
+            <AnimatePresence>
+                {recommendations.length > 0 && (
+                    <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] max-h-[60vh] overflow-y-auto z-20">
+                        <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">추천 지역</h3>
+                            <button onClick={() => { setRecommendations([]); setManualInputs([{ text: "" }]); }} className="text-xs text-gray-400">다시 찾기</button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4">
-                            {Object.entries(currentFilters.tabs).map(([tabKey, tabData]: any) => (
-                                <TabsContent key={tabKey} value={tabKey} className="mt-0 h-full">
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {tabData.options.map((opt: string) => (
-                                            <Button key={opt} variant={selectedFilters[tabKey]?.includes(opt) ? "default" : "outline"} className={`h-auto py-2 px-1 text-xs break-keep ${selectedFilters[tabKey]?.includes(opt) ? "bg-purple-50 text-[#7C3AED] border-[#7C3AED]" : "text-gray-600 border-gray-200"}`} onClick={() => toggleFilter(tabKey, opt)}>
-                                                {opt}
-                                            </Button>
-                                        ))}
-                                    </div>
-                                </TabsContent>
+
+                        {/* 지역 선택 탭 */}
+                        <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
+                            {recommendations.map((r, i) => (
+                                <button key={i} onClick={() => { setActiveTabIdx(i); setCurrentDisplayRegion(r); }}
+                                    className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTabIdx === i ? "bg-[#7C3AED] text-white shadow-md" : "bg-gray-100 text-gray-500"}`}>
+                                    {r.region_name}
+                                </button>
                             ))}
                         </div>
-                    </Tabs>
-                )}
-              </div>
-              <div className="p-4 border-t bg-white"><Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => setIsFilterOpen(false)}>선택 완료</Button></div>
-          </DialogContent>
-      </Dialog>
-      
-      {/* 친구/취향 모달 */}
-      <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
-          <DialogContent>
-              <DialogHeader>
-                  <DialogTitle>친구 추가</DialogTitle>
-                  <DialogDescription className="hidden">함께 만날 친구를 선택하세요.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">{AI_PERSONAS.map(f=><div key={f.id} onClick={()=>toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf=>sf.id===f.id)&&<CheckCircle2 className="ml-auto w-4 h-4 text-purple-600"/>}</div>)}</div>
-          </DialogContent>
-      </Dialog>
-      <PreferenceModal isOpen={isPreferenceModalOpen} onClose={()=>setIsPreferenceModalOpen(false)} onComplete={()=>setIsPreferenceModalOpen(false)}/>
-      
-      {/* 상세 모달 */}
-      <Dialog open={isDetailOpen} onOpenChange={(open) => {
-          setIsDetailOpen(open);
-          if (!open) {
-              polylinesRef.current.forEach(p => p.setMap(null));
-              polylinesRef.current = [];
-              timeMarkersRef.current.forEach(m => m.setMap(null));
-              timeMarkersRef.current = [];
-              if(currentDisplayRegion) drawRegionPaths(currentDisplayRegion);
-          }
-      }}>
-          <DialogContent className="sm:max-w-md h-[80vh] flex flex-col font-['Pretendard']">
-              <DialogHeader>
-                  <DialogTitle className="text-xl flex items-center gap-2">
-                      {selectedPlace?.name} 
-                      <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge>
-                  </DialogTitle>
-                  <DialogDescription className="hidden">장소 상세 정보입니다.</DialogDescription>
-              </DialogHeader>
-              
-              <div className="flex-1 overflow-y-auto py-2 space-y-4">
-                  <div className="bg-purple-50 p-4 rounded-lg text-center">
-                      <div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div>
-                      <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div>
-                  </div>
 
-                  <div className="flex flex-wrap gap-2">
-                      {selectedPlace?.tags?.map((t: string, i: number) => (
-                          <Badge key={i} variant="secondary" className="bg-white border border-gray-200 text-gray-500">#{t}</Badge>
-                      ))}
-                  </div>
-                  <Button variant="outline" className="w-full">✍️ 리뷰 쓰고 AI 학습시키기</Button>
-              </div>
-          </DialogContent>
-      </Dialog>
-    </motion.div>
-  )
+                        <div className="space-y-3">{currentDisplayRegion?.places?.map((p: any) => <PlaceCard key={p.id} place={p} onClick={() => handlePlaceClick(p)} />)}</div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Loading & Error */}
+            {loading && <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin" /></div>}
+            {gpsError && <div className="absolute top-24 left-4 right-4 bg-red-100 text-red-600 p-2 rounded-lg text-xs z-50">{gpsError}</div>}
+
+            {/* 필터 상세 설정 모달 */}
+            <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
+                <DialogContent className="sm:max-w-md h-[70vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
+                    <DialogHeader className="px-6 pt-4 pb-2 bg-white border-b">
+                        <DialogTitle>상세 필터 설정</DialogTitle>
+                        <DialogDescription className="hidden">모임의 목적과 세부 옵션을 설정하세요.</DialogDescription>
+                    </DialogHeader>
+
+                    <div className="px-4 py-3 bg-gray-50 border-b">
+                        <div className="text-xs font-bold text-gray-500 mb-2">모임의 목적</div>
+                        <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                            {Object.keys(PURPOSE_FILTERS).map((purposeKey) => (
+                                <Button key={purposeKey} variant={selectedPurpose === purposeKey ? "default" : "outline"} className={`rounded-full h-8 text-xs flex-shrink-0 ${selectedPurpose === purposeKey ? "bg-[#7C3AED] text-white" : "text-gray-600"}`} onClick={() => { setSelectedPurpose(purposeKey); setSelectedFilters({ PURPOSE: [purposeKey], CATEGORY: [], PRICE: [], VIBE: [], CONDITION: [] }); }}>
+                                    {PURPOSE_FILTERS[purposeKey].label}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col bg-white overflow-hidden">
+                        {currentFilters && (
+                            <Tabs defaultValue={Object.keys(currentFilters.tabs)[0]} className="flex-1 flex flex-col">
+                                <div className="px-4 pt-2 border-b">
+                                    <TabsList className="w-full grid grid-cols-2 h-auto p-1 bg-gray-100 rounded-lg">
+                                        {Object.keys(currentFilters.tabs).map((tabKey) => (
+                                            <TabsTrigger key={tabKey} value={tabKey} className="text-xs py-1.5">{currentFilters.tabs[tabKey].label}</TabsTrigger>
+                                        ))}
+                                    </TabsList>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4">
+                                    {Object.entries(currentFilters.tabs).map(([tabKey, tabData]: any) => (
+                                        <TabsContent key={tabKey} value={tabKey} className="mt-0 h-full">
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {tabData.options.map((opt: string) => (
+                                                    <Button key={opt} variant={selectedFilters[tabKey]?.includes(opt) ? "default" : "outline"} className={`h-auto py-2 px-1 text-xs break-keep ${selectedFilters[tabKey]?.includes(opt) ? "bg-purple-50 text-[#7C3AED] border-[#7C3AED]" : "text-gray-600 border-gray-200"}`} onClick={() => toggleFilter(tabKey, opt)}>
+                                                        {opt}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        </TabsContent>
+                                    ))}
+                                </div>
+                            </Tabs>
+                        )}
+                    </div>
+                    <div className="p-4 border-t bg-white"><Button className="w-full bg-[#7C3AED] hover:bg-purple-700 font-bold" onClick={() => setIsFilterOpen(false)}>선택 완료</Button></div>
+                </DialogContent>
+            </Dialog>
+
+            {/* 친구/취향 모달 */}
+            <Dialog open={isFriendModalOpen} onOpenChange={setIsFriendModalOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>친구 추가</DialogTitle>
+                        <DialogDescription className="hidden">함께 만날 친구를 선택하세요.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">{AI_PERSONAS.map(f => <div key={f.id} onClick={() => toggleFriend(f)} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer border rounded-lg"><Avatar><AvatarFallback>{f.name[0]}</AvatarFallback></Avatar><div><div className="font-bold">{f.name}</div><div className="text-xs text-gray-500">{f.locationName}</div></div>{selectedFriends.find(sf => sf.id === f.id) && <CheckCircle2 className="ml-auto w-4 h-4 text-purple-600" />}</div>)}</div>
+                </DialogContent>
+            </Dialog>
+            <PreferenceModal isOpen={isPreferenceModalOpen} onClose={() => setIsPreferenceModalOpen(false)} onComplete={() => setIsPreferenceModalOpen(false)} />
+
+            {/* 상세 모달 */}
+            <Dialog open={isDetailOpen} onOpenChange={(open) => {
+                setIsDetailOpen(open);
+                if (!open) {
+                    polylinesRef.current.forEach(p => p.setMap(null));
+                    polylinesRef.current = [];
+                    timeMarkersRef.current.forEach(m => m.setMap(null));
+                    timeMarkersRef.current = [];
+                    if (currentDisplayRegion) drawRegionPaths(currentDisplayRegion);
+                }
+            }}>
+                <DialogContent className="sm:max-w-md h-[80vh] flex flex-col font-['Pretendard']">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl flex items-center gap-2">
+                            {selectedPlace?.name}
+                            <Badge variant="outline" className="text-xs font-normal">{selectedPlace?.category}</Badge>
+                        </DialogTitle>
+                        <DialogDescription className="hidden">장소 상세 정보입니다.</DialogDescription>
+                    </DialogHeader>
+
+                    <div className="flex-1 overflow-y-auto py-2 space-y-4">
+                        <div className="bg-purple-50 p-4 rounded-lg text-center">
+                            <div className="text-sm text-purple-800 font-bold mb-1">AI 추천 점수</div>
+                            <div className="text-3xl font-black text-[#7C3AED]">{selectedPlace?.score}</div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                            {selectedPlace?.tags?.map((t: string, i: number) => (
+                                <Badge key={i} variant="secondary" className="bg-white border border-gray-200 text-gray-500">#{t}</Badge>
+                            ))}
+                        </div>
+                        <Button variant="outline" className="w-full">✍️ 리뷰 쓰고 AI 학습시키기</Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </motion.div>
+    )
 }
 
+// 🌟 PlaceAutocomplete: 컴포넌트 밖으로 빼서 정의
 function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
     const [list, setList] = useState<any[]>([]);
 
     useEffect(() => {
         if (!value || value.length < 1) { setList([]); return; }
-        
+
         const t = setTimeout(async () => {
             try {
-                // 🌟 [핵심 변경] 우리 서버의 자동완성 API 호출 (지하철역 등 핫스팟 검색)
+                // 🌟 우리 서버의 자동완성 API 호출
                 const res = await fetch(`${API_URL}/api/places/autocomplete?query=${value}`);
                 if (res.ok) {
                     const data = await res.json();
@@ -720,36 +737,37 @@ function PlaceAutocomplete({ value, onChange, onSelect, placeholder }: any) {
 
     return (
         <div className="relative w-full">
-            <Input 
-                value={value} 
-                onChange={e => onChange(e.target.value)} 
-                placeholder={placeholder} 
+            <Input
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={placeholder}
                 className="h-8 text-sm bg-transparent border-none p-0 focus-visible:ring-0"
             />
             {list.length > 0 && (
+                // 🌟 [수정 포인트] absolute 제거 -> 일반 흐름(Flow)으로 변경 (겹침 방지)
                 <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mt-2 max-h-60 overflow-y-auto">
-                {list.map((item, i) => (
-                    <div 
-                        key={i} 
-                        onClick={() => {
-                            onSelect(item); 
-                            setList([]);
-                        }} 
-                        className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
-                    >
-                        <div className="font-bold text-gray-800">
-                            {item.name} 
-                            {/* 호선 정보가 있으면 표시 */}
-                            {item.lines && item.lines.length > 0 && (
-                                <span className="ml-2 text-[10px] font-normal text-gray-500 bg-gray-100 px-1 rounded">
-                                    {item.lines.join(",")}
-                                </span>
-                            )}
+                    {list.map((item, i) => (
+                        <div
+                            key={i}
+                            onClick={() => {
+                                onSelect(item);
+                                setList([]);
+                            }}
+                            className="p-3 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0 border-gray-100 transition-colors flex justify-between items-center"
+                        >
+                            <div className="font-bold text-gray-800">
+                                {item.name}
+                                {/* 호선 정보가 있으면 표시 */}
+                                {item.lines && item.lines.length > 0 && (
+                                    <span className="ml-2 text-[10px] font-normal text-gray-500 bg-gray-100 px-1 rounded">
+                                        {item.lines.join(",")}
+                                    </span>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
-        )}
-    </div>
-)
+                    ))}
+                </div>
+            )}
+        </div>
+    )
 }
