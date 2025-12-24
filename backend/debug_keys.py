@@ -2,8 +2,8 @@ import requests
 
 # 🚨 여기에 네이버 클라우드(NCP)에서 발급받은 '지도(Map)' 키를 직접 붙여넣으세요!
 # (.env 파일에서 가져오지 않고 직접 넣어서 테스트합니다)
-NAVER_MAP_ID = "djsgmvkn5q" 
-NAVER_MAP_SECRET = "gvpXgJJzWmEoaxDJ2WdMXanIWIAukwp1a1rOV6Dr"
+NAVER_MAP_ID = "9v6ryi96pr" 
+NAVER_MAP_SECRET = "SWzbnHxWxlEJLNAC0oRu58qkSrIXonCHAp6tAoO4"
 
 def test_geocoding():
     print("🚑 [Geocoding API 긴급 진단 시작]")
