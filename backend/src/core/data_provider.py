@@ -82,7 +82,7 @@ class RealDataProvider:
 
                 try:
                     # 🌟 약간의 딜레이로 API 안정성 확보
-                    time.sleep(0.05) 
+                    time.sleep(0.2) 
                     
                     url = f"https://openapi.naver.com/v1/search/local.json?query={urllib.parse.quote(search_query)}&display=5&start={start_idx}&sort=random"
                     res = requests.get(url, headers=self.search_headers)
