@@ -71,7 +71,7 @@ class RealDataProvider:
                     ))
             
             # DB에서 충분히 찾았으면 API 호출 건너뜀 (예: 5개 이상이면)
-            if len(results) >= 5:
+            if len(results) >= 30:
                 continue
 
             # 2. [API 호출] DB에 없거나 부족하면 네이버 검색
