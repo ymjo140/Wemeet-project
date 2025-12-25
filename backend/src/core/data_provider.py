@@ -17,16 +17,22 @@ class PlaceInfo:
 
 class RealDataProvider:
     def __init__(self):
-        # 현재 로딩된 키의 앞자리만 출력하여 키가 제대로 들어갔는지 검증
-        print(f"🔑 [System] 현재 로드된 Map ID: {settings.NAVER_MAP_ID[:5]}*** (맞는지 확인하세요)")
+        # ✅ 방금 주신 새 키를 직접 넣었습니다. (공백 문제/캐시 문제 원천 차단)
+        real_id = "kcplwdse1o"
+        real_secret = "N0G9XjfLVwnFm66bOaOx8gZNTV9RXv8wUlRT8yN6"
+
+        print(f"🔑 [Hardcoded] ID: {real_id} 로 구동 중...")
         
+        # 검색용 키 (기존 것 유지)
         self.search_headers = {
-            "X-Naver-Client-Id": settings.NAVER_SEARCH_ID,
-            "X-Naver-Client-Secret": settings.NAVER_SEARCH_SECRET
+            "X-Naver-Client-Id": "7hzPrrLNl9CqLaAffBDb", 
+            "X-Naver-Client-Secret": "aijs1MO01i"
         }
+        
+        # 지도용 키 (새 키 적용)
         self.map_headers = {
-            "X-NCP-APIGW-API-KEY-ID": settings.NAVER_MAP_ID,
-            "X-NCP-APIGW-API-KEY": settings.NAVER_MAP_SECRET
+            "X-NCP-APIGW-API-KEY-ID": real_id,
+            "X-NCP-APIGW-API-KEY": real_secret
         }
 
     def get_coordinates(self, query: str):
