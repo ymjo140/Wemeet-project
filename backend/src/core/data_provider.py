@@ -17,22 +17,22 @@ class PlaceInfo:
 
 class RealDataProvider:
     def __init__(self):
-        # ✅ 방금 주신 새 키를 직접 넣었습니다. (공백 문제/캐시 문제 원천 차단)
+        # ✅ wemeet (기존 앱) 키로 원복
         real_id = "kcplwdse1o"
         real_secret = "N0G9XjfLVwnFm66bOaOx8gZNTV9RXv8wUlRT8yN6"
 
-        print(f"🔑 [Hardcoded] ID: {real_id} 로 구동 중...")
+        print(f"🔑 [Revert] ID: {real_id} (wemeet 원복)")
         
-        # 검색용 키 (기존 것 유지)
         self.search_headers = {
             "X-Naver-Client-Id": "7hzPrrLNl9CqLaAffBDb", 
             "X-Naver-Client-Secret": "aijs1MO01i"
         }
         
-        # 지도용 키 (새 키 적용)
+        # ✅ Referer 추가 (Web Dynamic Map과 같이 쓰는 경우 필수일 수 있음)
         self.map_headers = {
             "X-NCP-APIGW-API-KEY-ID": real_id,
-            "X-NCP-APIGW-API-KEY": real_secret
+            "X-NCP-APIGW-API-KEY": real_secret,
+            "Referer": "http://localhost:3000"  # 네이버 콘솔에 등록된 주소 중 하나
         }
 
     def get_coordinates(self, query: str):
