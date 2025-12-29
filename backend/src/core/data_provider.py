@@ -64,13 +64,18 @@ class RealDataProvider:
         seen_names = set()
         start_locations = start_locations or []
 
+        # ✅ [수정 포인트 1] 모드 확인
+        # region_name이 있으면 -> 추천 모드 (1km 제한)
+        # region_name이 없으면 -> 일반 검색 모드 (거리 제한 없음)
+        is_recommendation_mode = bool(region_name and region_name.strip())
+
         # ---------------------------------------------------------
-        # ⚡ [최적화] 루프 밖에서 시간 정보 미리 조회 (Pre-fetch)
-        # 햄버거집 개수만큼 DB를 조회하지 않고, 사람 수만큼(3~4번)만 조회해서 저장해둠
+        # ⚡ [Pre-fetch] 시간 정보 미리 조회
+        # 추천 모드일 때만 실행 (일반 검색은 중심지가 없으므로 시간 계산 불가/불필요)
         # ---------------------------------------------------------
         preloaded_routes = {}
         
-        if db and start_locations and region_name:
+        if is_recommendation_mode and db and start_locations:
             print(f"⏳ [Pre-fetch] '{region_name}'까지의 소요시간 미리 조회 중...")
             for start in start_locations:
                 s_name = start.get('name', '')
@@ -98,16 +103,18 @@ class RealDataProvider:
                             "source": "not_found"
                         }
                 except Exception as e:
-                    print(f"⚠️ DB Error for {s_name}: {e}")
+                    # print(f"⚠️ DB Error for {s_name}: {e}")
                     preloaded_routes[s_name] = {"time": 0, "transportation": "error"}
 
-        print(f"\n🚀 [Start] '{region_name}' 주변 1km 검색 시작: {queries}")
+        mode_str = f"'{region_name}' 주변 1km" if is_recommendation_mode else "일반(전국)"
+        print(f"\n🚀 [Start] {mode_str} 검색 시작: {queries}")
 
         try:
             for q in queries:
                 if len(results) >= 50: break
                 
-                search_query = f"{region_name} {q}" if region_name else q
+                # 일반 검색이면 region_name을 붙이지 않고 검색어만 사용
+                search_query = f"{region_name} {q}" if is_recommendation_mode else q
                 
                 for start_idx in range(1, 100, 20): 
                     if len(results) >= 50: break
@@ -135,9 +142,11 @@ class RealDataProvider:
                         
                         if lat == 0.0 or lng == 0.0: continue
 
-                        # 1km 거리 필터링
-                        dist_from_center = self.calculate_distance_km(center_lat, center_lng, lat, lng)
-                        if dist_from_center > 1.0: continue 
+                        # ✅ [수정 포인트 2] 거리 필터링 조건부 적용
+                        if is_recommendation_mode:
+                            # 추천 모드일 때만 1km 컷!
+                            dist_from_center = self.calculate_distance_km(center_lat, center_lng, lat, lng)
+                            if dist_from_center > 1.0: continue 
                         
                         seen_names.add(clean_name)
                         category = item['category'].split('>')[0] if item['category'] else "기타"
@@ -148,11 +157,9 @@ class RealDataProvider:
                                 if not repo.get_place_by_name(db, clean_name):
                                     repo.create_place(db, clean_name, category, lat, lng, [q], 0.0, address)
                                     db.commit()
-                                    # print(f"   ✅ [Saved] {clean_name}")
                             except: 
                                 db.rollback()
 
-                        # ✅ 미리 조회해둔(preloaded_routes) 정보를 그대로 할당 (속도 매우 빠름)
                         results.append(PlaceInfo(
                             name=clean_name, 
                             category=category, 
@@ -160,7 +167,7 @@ class RealDataProvider:
                             avg_rating=0.0, 
                             tags=[q], 
                             address=address,
-                            routes=preloaded_routes # 👈 여기가 핵심
+                            routes=preloaded_routes # 미리 조회된 시간 정보 (일반 검색이면 비어있음)
                         ))
                         
         except Exception as e:
